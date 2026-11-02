@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Manage the local OmniVoice TTS server (OpenAI-compatible, 127.0.0.1:8890).
+# Usage: omnivoicectl start|stop|restart|status|log
+# Safe to call from the WSL [boot] command: it sets its own PATH/HOME and never blocks.
+set -euo pipefail
+
+DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+PIDFILE="$DIR/run/omnivoice.pid"
+LOG="$DIR/logs/server.log"
+
+# The boot command runs with a near-empty environment; pin everything the server needs.
+export HOME="${HOME:-/root}"
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export HF_HOME="${HF_HOME:-/root/.cache/huggingface}"
+# Model is cached; don't let a boot without network block on a hub lookup.
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+PORT="${OMNIVOICE_PORT:-8890}"
+
+pid_alive() {
+  [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+health() {
+  python3 - "$PORT" <<'PY' 2>/dev/null
+import sys, urllib.request
+urllib.request.urlopen(f"http://127.0.0.1:{sys.argv[1]}/health", timeout=2).read()
+PY
+}
+
+start() {
+  if pid_alive; then
+    echo "already running (pid $(cat "$PIDFILE"))"
+    return 0
+  fi
+  mkdir -p "$DIR/run" "$DIR/logs"
+  cd "$DIR"
+  # Detach fully so the caller (boot command, terminal) can exit.
+  setsid nohup "$DIR/.venv/bin/python" -W ignore server.py >>"$LOG" 2>&1 </dev/null &
+  echo $! >"$PIDFILE"
+  echo "started (pid $!), log: $LOG"
+}
+
+stop() {
+  if ! pid_alive; then
+    rm -f "$PIDFILE"
+    echo "not running"
+    return 0
+  fi
+  local pid
+  pid="$(cat "$PIDFILE")"
+  kill "$pid"
+  for _ in $(seq 1 50); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.2
+  done
+  kill -0 "$pid" 2>/dev/null && kill -9 "$pid"
+  rm -f "$PIDFILE"
+  echo "stopped (pid $pid)"
+}
+
+status() {
+  if pid_alive; then
+    if health; then
+      echo "running (pid $(cat "$PIDFILE")), healthy on 127.0.0.1:$PORT"
+    else
+      echo "running (pid $(cat "$PIDFILE")), not answering /health yet (model loading?)"
+      return 1
+    fi
+  else
+    echo "not running"
+    return 3
+  fi
+}
+
+case "${1:-status}" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop; start ;;
+  status) status ;;
+  log) tail -n 50 -f "$LOG" ;;
+  *) echo "usage: $0 start|stop|restart|status|log" >&2; exit 2 ;;
+esac
