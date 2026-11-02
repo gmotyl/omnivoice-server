@@ -1,0 +1,27 @@
+[project]
+name = "omnivoice-local"
+version = "0.1.0"
+description = "Local OmniVoice TTS behind an OpenAI-compatible HTTP API, for anytts / the Pavilio panel"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "omnivoice",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "soundfile>=0.12",
+    "numpy",
+]
+
+[tool.uv]
+package = false
+
+# CUDA 12.8 wheels for torch/torchaudio (RTX 40xx, WSL2 driver >= 570)
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
