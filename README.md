@@ -33,4 +33,5 @@ uv run python make_voice.py pl-ania --language pl --design "female, young adult"
 uv run python make_voice.py me --language pl --ref clip.wav --ref-text "..."
 ```
 
-Then `./omnivoicectl restart`.
+Then `./omnivoicectl restart`. `make_candidates.py` bootstraps a batch (`cand-*`, British English +
+Polish) with one model load and prints duration + median F0 per clip as a sanity check.
