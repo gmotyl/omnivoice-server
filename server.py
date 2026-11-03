@@ -3,6 +3,8 @@
 Endpoints:
   POST /v1/audio/speech   {"input", "voice", "response_format", "speed", "language"?} -> audio bytes
   GET  /v1/voices         saved voices + the built-in "auto" voice
+  POST /v1/voices         multipart (file, name, ref_text, locale, gender, label, multilingual)
+                          -> clones a custom voice into the custom dir, live without a restart
   GET  /health            model/device status
 
 Voices:
@@ -23,7 +25,10 @@ import io
 import json
 import logging
 import os
+import re
+import shutil
 import subprocess
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -32,8 +37,8 @@ from typing import Literal
 import numpy as np
 import soundfile as sf
 import torch
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse, Response
 from omnivoice import OmniVoice, VoiceClonePrompt
 from pydantic import BaseModel, Field
 
@@ -56,6 +61,10 @@ MEDIA_TYPES = {
 
 # Voice record metadata fields beyond id/source; a legacy .json may lack any of them (-> None).
 META_FIELDS = ("language", "locale", "gender", "label", "multilingual", "ref_text", "description")
+
+VOICE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+LOCALE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
+GENDERS = ("male", "female", "neutral")
 
 log = logging.getLogger("omnivoice")
 state: dict = {}
@@ -190,6 +199,85 @@ async def speech(req: SpeechRequest) -> Response:
 def voices() -> dict:
     auto = {"id": "auto", "source": None, **{f: None for f in META_FIELDS}, "description": "model-chosen, varies per call"}
     return {"default": DEFAULT_VOICE, "voices": [auto, *(v.record() for v in state["voices"].values())]}
+
+
+def to_wav(src: Path, dst: Path) -> None:
+    """Decode any ffmpeg-readable sample into 24 kHz mono 16-bit wav; 400 if it can't be decoded."""
+    proc = subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-y", "-i", str(src), "-ac", "1", "-ar", str(SR), "-c:a", "pcm_s16le", str(dst)],
+        capture_output=True,
+    )
+    if proc.returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
+        raise HTTPException(400, f"could not decode the audio file: {proc.stderr.decode(errors='replace')[:300]}")
+
+
+@app.post("/v1/voices", status_code=201)
+async def create_voice(
+    file: UploadFile = File(...),
+    name: str = Form(""),
+    ref_text: str = Form(""),
+    locale: str = Form(""),
+    gender: str = Form(""),
+    label: str = Form(""),
+    multilingual: str = Form("false"),
+) -> JSONResponse:
+    # Validate everything before touching the disk.
+    if not VOICE_NAME.match(name):
+        raise HTTPException(400, f"invalid voice name '{name}': use a-z, 0-9 and '-', 1-64 chars, not starting with '-'")
+    existing = state["voices"].get(name)
+    if (existing is not None and existing.source == "bundled") or (voices_dir() / f"{name}.pt").exists():
+        raise HTTPException(409, "bundled voice — pick another name")
+    if not ref_text.strip():
+        raise HTTPException(400, "ref_text (the sample's transcript) must not be blank")
+    if not LOCALE.match(locale):
+        raise HTTPException(400, f"invalid locale '{locale}', e.g. pl-PL")
+    if gender not in GENDERS:
+        raise HTTPException(400, f"gender must be one of {', '.join(GENDERS)}")
+    if multilingual not in ("true", "false"):
+        raise HTTPException(400, "multilingual must be 'true' or 'false'")
+
+    meta = {
+        "language": locale.split("-")[0].lower(),
+        "locale": locale,
+        "gender": gender,
+        "label": label.strip() or None,
+        "multilingual": multilingual == "true",
+        "ref_text": ref_text.strip(),
+        "description": None,
+    }
+
+    target = custom_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    # Stage every file in a hidden temp dir inside the custom dir (same filesystem, so the final
+    # renames are atomic; load_dir only globs top-level *.pt, so it never sees the staging dir).
+    tmp = Path(tempfile.mkdtemp(prefix=".tmp-", dir=target))
+    try:
+        upload = tmp / "upload"
+        upload.write_bytes(await file.read())
+        wav = tmp / f"{name}.wav"
+        await asyncio.to_thread(to_wav, upload, wav)
+
+        async with gen_lock:  # the clone prompt runs on the same single GPU as generation
+            try:
+                prompt = await asyncio.to_thread(
+                    state["model"].create_voice_clone_prompt, ref_audio=str(wav), ref_text=meta["ref_text"]
+                )
+            except Exception as exc:  # noqa: BLE001 - surface any model failure as a client-visible detail
+                log.exception("clone prompt failed for '%s'", name)
+                raise HTTPException(400, f"voice cloning failed: {exc}") from exc
+
+        prompt.save(str(tmp / f"{name}.pt"))
+        (tmp / f"{name}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+        # Everything is staged; only now replace the live files (wav, json, then pt last, because
+        # load_dir keys a voice on its .pt).
+        for ext in (".wav", ".json", ".pt"):
+            os.replace(tmp / f"{name}{ext}", target / f"{name}{ext}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    voice = Voice(name, prompt, "custom", meta)
+    state["voices"][name] = voice
+    return JSONResponse(voice.record(), status_code=201)
 
 
 @app.get("/health")
