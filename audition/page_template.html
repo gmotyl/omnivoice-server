@@ -117,7 +117,7 @@ const pick = {};      // id -> "keep" | "drop"
 const names = {};     // id -> voice name for voices/
 const defaults = {};  // lang -> id
 
-const srcKey = v => v.status === "installed" ? "installed" : v.source.startsWith("VCTK") ? "vctk" : v.source.startsWith("mimba") ? "vb" : "mls";
+const srcKey = v => v.status === "installed" ? "installed" : v.source.startsWith("VCTK") ? "vctk" : v.source.startsWith("mimba") ? "vb" : v.source === "voice design" ? "style" : "mls";
 const multi = v => v.audios.length > 1;
 const median = (() => { const m = {}; for (const l of ["pl", "en"]) { const d = V.filter(v => v.language === l).map(v => v.sampleS).sort((a, b) => a - b); m[l] = d[Math.floor(d.length / 2)]; } return m; })();
 const isLong = v => v.sampleS > median[v.language] * 1.45;
@@ -125,11 +125,13 @@ function suggestName(v) {
   if (v.status === "installed") return v.id;
   const g = v.gender === "female" ? "f" : "m";
   if (srcKey(v) === "vb") return v.speaker.replace(/_normal_|_/g, "-");
+  if (srcKey(v) === "style") return v.speaker;
   return v.language === "pl" ? `pl-${g}-mls${v.speaker}` : `${v.locale.toLowerCase()}-${g}-${v.speaker}`;
 }
 function label(v) {
   if (v.status === "installed") return null;
   if (srcKey(v) === "vb") return `${v.accent}, ${v.gender}, ${v.age}, ${v.region} (voice bank)`;
+  if (srcKey(v) === "style") return `${v.region} (voice design)`;
   if (v.language === "pl") return `Polish, LibriVox narrator ${v.speaker}, ${v.gender}`;
   return `${v.accent.replace("NorthernIrish", "Northern Irish")}, ${v.gender}, ${v.age}, ${v.region} (VCTK ${v.speaker})`;
 }
@@ -142,7 +144,7 @@ document.getElementById("sub").innerHTML =
 const FILTERS = {
   language: [["all", "all"], ["pl", "Polish"], ["en", "English"]],
   gender: [["all", "all"], ["female", "female"], ["male", "male"]],
-  source: [["all", "all"], ["vctk", "new · VCTK"], ["mls", "new · LibriVox PL"], ["vb", "new · voice bank"], ["installed", "installed"]]
+  source: [["all", "all"], ["vctk", "new · VCTK"], ["mls", "new · LibriVox PL"], ["vb", "new · voice bank"], ["style", "new · style designs"], ["installed", "installed"]]
     .filter(([k]) => k === "all" || V.some(v => srcKey(v) === k)),
   state: [["not-dropped", "hide dropped"], ["all", "all"], ["keep", "kept only"], ["unrated", "unrated"]],
 };

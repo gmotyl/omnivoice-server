@@ -1,1 +1,3 @@
 male_child_verylow_normal_british
+male_elderly_verylow_normal_british
+female_child_veryhigh_normal_british
