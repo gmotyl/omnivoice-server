@@ -59,7 +59,9 @@ audio { width: 100%; height: 34px; }
 .actions .btn[aria-pressed="true"].d { background: var(--drop-bg); color: var(--drop); border-color: var(--drop); }
 .pickrow { display: none; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
 .card.keep .pickrow { display: flex; }
-.pickrow input[type=text] { width: 140px; font-family: ui-monospace, monospace; }
+.pickrow input[type=text] { width: 200px; max-width: 100%; font-family: ui-monospace, monospace; }
+.smp { display: flex; gap: 6px; align-items: center; }
+.smp audio { flex: 1; min-width: 0; }
 
 .tray { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); z-index: 3; }
 .tray-inner { max-width: 1100px; margin: 0 auto; padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -77,7 +79,7 @@ summary { cursor: pointer; }
 <main>
   <h1>OmniVoice voices — pick for the panel</h1>
   <p class="sub" id="sub"></p>
-  <p class="note top">The samples are OmniVoice renders at the server's default quality, not the original recordings. VCTK and MLS clips are CC-BY 4.0 (attribution kept in each voice's description). The OmniVoice weights are CC-BY-NC, so this is for personal use only. Renders flagged <i>long</i> took much longer than the sentence needs, which usually means stutter or artifacts.</p>
+  <p class="note top">The samples are OmniVoice renders at the server's default quality, not the original recordings. Each card's tags name the voice's source. VCTK and MLS clips are CC-BY 4.0, and the mimba voice bank is CC-BY-NC-SA 4.0. The OmniVoice weights are CC-BY-NC, so all of this is for personal use only. Renders flagged <i>long</i> took much longer than the sentence needs, which usually means stutter or artifacts.</p>
 
   <div class="filters" role="toolbar" aria-label="Filters">
     <div class="group" data-f="language"><span>Language</span></div>
@@ -115,29 +117,33 @@ const pick = {};      // id -> "keep" | "drop"
 const names = {};     // id -> voice name for voices/
 const defaults = {};  // lang -> id
 
-const srcKey = v => v.status === "installed" ? "installed" : v.source.startsWith("VCTK") ? "vctk" : "mls";
+const srcKey = v => v.status === "installed" ? "installed" : v.source.startsWith("VCTK") ? "vctk" : v.source.startsWith("mimba") ? "vb" : "mls";
+const multi = v => v.audios.length > 1;
 const median = (() => { const m = {}; for (const l of ["pl", "en"]) { const d = V.filter(v => v.language === l).map(v => v.sampleS).sort((a, b) => a - b); m[l] = d[Math.floor(d.length / 2)]; } return m; })();
 const isLong = v => v.sampleS > median[v.language] * 1.45;
 function suggestName(v) {
   if (v.status === "installed") return v.id;
   const g = v.gender === "female" ? "f" : "m";
+  if (srcKey(v) === "vb") return v.speaker.replace(/_normal_|_/g, "-");
   return v.language === "pl" ? `pl-${g}-mls${v.speaker}` : `${v.locale.toLowerCase()}-${g}-${v.speaker}`;
 }
 function label(v) {
   if (v.status === "installed") return null;
+  if (srcKey(v) === "vb") return `${v.accent}, ${v.gender}, ${v.age}, ${v.region} (voice bank)`;
   if (v.language === "pl") return `Polish, LibriVox narrator ${v.speaker}, ${v.gender}`;
   return `${v.accent.replace("NorthernIrish", "Northern Irish")}, ${v.gender}, ${v.age}, ${v.region} (VCTK ${v.speaker})`;
 }
 V.forEach(v => { names[v.id] = suggestName(v); });
 
 document.getElementById("sub").innerHTML =
-  `${V.length} voices, each reading the same sentence for its language. Polish: <q>${DATA.sentence.pl}</q> English: <q>${DATA.sentence.en}</q> ` +
+  `${V.length} voices, each reading the same sentence ${V.some(multi) ? "in Polish and in English" : "for its language"}. Polish: <q>${DATA.sentence.pl}</q> English: <q>${DATA.sentence.en}</q> ` +
   `Mark voices <b>Keep</b> or <b>Drop</b>, choose a default per language, then copy the prompt at the bottom into an agent session.`;
 
 const FILTERS = {
   language: [["all", "all"], ["pl", "Polish"], ["en", "English"]],
   gender: [["all", "all"], ["female", "female"], ["male", "male"]],
-  source: [["all", "all"], ["vctk", "new · VCTK"], ["mls", "new · LibriVox PL"], ["installed", "installed"]],
+  source: [["all", "all"], ["vctk", "new · VCTK"], ["mls", "new · LibriVox PL"], ["vb", "new · voice bank"], ["installed", "installed"]]
+    .filter(([k]) => k === "all" || V.some(v => srcKey(v) === k)),
   state: [["not-dropped", "hide dropped"], ["all", "all"], ["keep", "kept only"], ["unrated", "unrated"]],
 };
 for (const [f, opts] of Object.entries(FILTERS)) {
@@ -162,7 +168,7 @@ function gender(v) {
   return /\bfemale\b/.test(d) || /-f\d?$|female/.test(v.id) ? "female" : /\bmale\b/.test(d) || /-m\d?$|male/.test(v.id) ? "male" : "";
 }
 function visible(v) {
-  if (state.language !== "all" && v.language !== state.language) return false;
+  if (state.language !== "all" && !v.audios.some(a => a.lang === state.language)) return false;
   if (state.gender !== "all" && gender(v) !== state.gender) return false;
   if (state.source !== "all" && srcKey(v) !== state.source) return false;
   if (state.accent && v.accent !== state.accent) return false;
@@ -180,25 +186,25 @@ for (const v of V) {
   const c = document.createElement("article");
   c.className = "card"; c.dataset.id = v.id;
   const tags = [v.locale, gender(v) + (v.gender_estimated ? " (est.)" : ""), v.age && `age ${v.age}`,
-    v.accent && v.accent !== "Polish" && v.accent.replace("NorthernIrish", "N. Irish"), v.region && (v.language === "pl" ? `book: ${v.region.replace(/_\d+$/, "").replace(/_/g, " ")}` : v.region), srcKey(v) === "installed" ? "installed" : v.source]
+    v.accent && v.accent !== "Polish" && v.accent.replace("NorthernIrish", "N. Irish"), v.region && (v.language === "pl" ? `book: ${v.region.replace(/_\d+$/, "").replace(/_/g, " ")}` : v.region), srcKey(v) === "installed" ? "installed" : v.source, multi(v) && "multilingual"]
     .filter(Boolean).map(t => `<span class="tag">${t}</span>`).join("");
   c.innerHTML = `
     <div class="head"><span class="name">${v.id}</span><span class="tag">${v.sampleS}s</span></div>
-    <div class="tags">${tags}${v.inCatalog ? '<span class="tag cat">in panel catalog</span>' : ""}${isLong(v) ? '<span class="tag warn">long — check for artifacts</span>' : ""}</div>
+    <div class="tags">${tags}${v.inCatalog ? '<span class="tag cat">in panel catalog</span>' : ""}${isLong(v) ? '<span class="tag warn">long — check for artifacts</span>' : ""}${v.pick === true ? '<span class="tag cat">your pick</span>' : ""}${v.similar_to ? `<span class="tag">similar to ${v.similar_to} (${v.similarity})</span>` : ""}</div>
     ${v.description ? `<div class="note">${v.description}</div>` : ""}
-    <audio controls preload="none" src="${v.audio}"></audio>
+    ${v.audios.map(a => `<div class="smp">${multi(v) ? `<span class="tag">${a.lang.toUpperCase()}</span>` : ""}<audio controls preload="none" src="${a.src}" aria-label="${a.lang} sample"></audio></div>`).join("")}
     <div class="actions">
       <button class="btn k" aria-pressed="false">Keep</button>
       <button class="btn d" aria-pressed="false">Drop</button>
     </div>
     <div class="pickrow">
       <label>name <input type="text" value="${names[v.id]}" ${v.status === "installed" ? "disabled" : ""} aria-label="Voice name"></label>
-      <label><input type="radio" name="def-${v.language}"> default for ${v.language.toUpperCase()}</label>
+      ${v.audios.map(a => `<label><input type="radio" name="def-${a.lang}" data-lang="${a.lang}"> default for ${a.lang.toUpperCase()}</label>`).join("")}
     </div>`;
   const [keep, drop] = c.querySelectorAll(".actions .btn");
   const setPick = val => {
     pick[v.id] = pick[v.id] === val ? undefined : val;
-    if (pick[v.id] !== "keep" && defaults[v.language] === v.id) delete defaults[v.language];
+    if (pick[v.id] !== "keep") for (const l of Object.keys(defaults)) if (defaults[l] === v.id) delete defaults[l];
     keep.setAttribute("aria-pressed", String(pick[v.id] === "keep"));
     drop.setAttribute("aria-pressed", String(pick[v.id] === "drop"));
     c.classList.toggle("keep", pick[v.id] === "keep"); c.classList.toggle("drop", pick[v.id] === "drop");
@@ -206,8 +212,8 @@ for (const v of V) {
   };
   keep.onclick = () => setPick("keep"); drop.onclick = () => setPick("drop");
   c.querySelector(".pickrow input[type=text]").oninput = e => { names[v.id] = e.target.value.trim(); updatePrompt(); };
-  c.querySelector(".pickrow input[type=radio]").onchange = () => { defaults[v.language] = v.id; updatePrompt(); };
-  c.querySelector("audio").onplay = e => document.querySelectorAll("audio").forEach(a => { if (a !== e.target) a.pause(); });
+  c.querySelectorAll(".pickrow input[type=radio]").forEach(r => r.onchange = () => { defaults[r.dataset.lang] = v.id; updatePrompt(); });
+  c.querySelectorAll("audio").forEach(el => el.onplay = e => document.querySelectorAll("audio").forEach(a => { if (a !== e.target) a.pause(); }));
   cards[v.id] = c; grid.appendChild(c);
 }
 
@@ -227,14 +233,14 @@ function updatePrompt() {
   const lines = kept.map(v => {
     const l = label(v);
     return v.status === "new"
-      ? `- ${v.id} → ${names[v.id]} | ${v.locale} | ${gender(v)} | label "${l}"`
+      ? `- ${v.id} → ${names[v.id]} | ${v.locale} | ${gender(v)} | multilingual: ${multi(v)} | label "${l}"`
       : `- ${v.id} (already installed, keep its current catalog label)`;
   });
   const def = ["pl", "en"].map(l => `${l}: ${defaults[l] ? names[defaults[l]] : "(not chosen, keep the current default)"}`).join(", ");
   document.getElementById("prompt").value =
 `Update my Pavilio OmniVoice voices with the voices I picked on the audition page.
 
-Kept voices (audition id → voice name | locale | gender | catalog label):
+Kept voices (audition id → voice name | locale | gender | multilingual | catalog label):
 ${lines.join("\n")}
 
 Defaults: ${def}
@@ -242,7 +248,7 @@ Catalog mode: ${mode === "replace" ? "REPLACE: OPENAI_CATALOG should list exactl
 
 Steps:
 1. omnivoice-server (/srv/git/prv/omnivoice-server):${newOnes.length ? ` for each new voice, copy audition/voices/<audition id>.{pt,json,wav} to voices/<voice name>.{pt,json,wav}.` : " nothing to copy."} Run ./omnivoicectl restart, check that GET http://127.0.0.1:8890/v1/voices lists them, synthesize one sentence with each, then commit.
-2. pavilio: following the workspace rules (own worktree, branch, PR to main), update panel/src/features/speech/openaiVoices.ts so that OPENAI_CATALOG matches the catalog mode above (multilingual: false; label as given) and OPENAI_VOICE_MAP uses the defaults above (default = the pl voice). Run the speech tests, then open the PR.
+2. pavilio: following the workspace rules (own worktree, branch, PR to main), update panel/src/features/speech/openaiVoices.ts so that OPENAI_CATALOG matches the catalog mode above (multilingual and label as given; a multilingual voice serves both pl and en) and OPENAI_VOICE_MAP uses the defaults above (default = the pl voice). Run the speech tests, then open the PR.
 3. Tell me when the PR is open, so I can select the voices in Settings → Speech.`;
 }
 document.querySelectorAll('input[name=mode]').forEach(r => r.onchange = updatePrompt);
@@ -259,21 +265,25 @@ document.getElementById("copy").onclick = async () => {
 };
 
 let queue = [];
+const playBtn = document.getElementById("playall");
+function stopAll() {
+  queue = []; document.querySelectorAll("audio").forEach(a => { a.pause(); a.onended = null; });
+  document.querySelectorAll(".card.playing").forEach(c => c.classList.remove("playing"));
+  playBtn.textContent = "▶ Play visible";
+}
 function playNext() {
   document.querySelectorAll(".card.playing").forEach(c => c.classList.remove("playing"));
-  const id = queue.shift(); if (!id) { document.getElementById("playall").textContent = "▶ Play visible"; return; }
-  const c = cards[id], a = c.querySelector("audio");
+  const a = queue.shift(); if (!a) { stopAll(); return; }
+  const c = a.closest(".card");
   c.classList.add("playing"); c.scrollIntoView({ block: "nearest" });
   a.currentTime = 0; a.onended = () => { a.onended = null; playNext(); }; a.play();
 }
-document.getElementById("playall").onclick = e => {
-  if (queue.length || document.querySelector(".card.playing")) {
-    queue = []; document.querySelectorAll("audio").forEach(a => { a.pause(); a.onended = null; });
-    document.querySelectorAll(".card.playing").forEach(c => c.classList.remove("playing"));
-    e.target.textContent = "▶ Play visible"; return;
-  }
-  queue = V.filter(v => !cards[v.id].hidden).map(v => v.id);
-  e.target.textContent = "■ Stop"; playNext();
+playBtn.onclick = () => {
+  if (queue.length || document.querySelector(".card.playing")) { stopAll(); return; }
+  // Every visible sample in order; with a language filter, only that language's samples.
+  queue = V.filter(v => !cards[v.id].hidden).flatMap(v => [...cards[v.id].querySelectorAll("audio")]
+    .filter(el => state.language === "all" || el.getAttribute("aria-label") === `${state.language} sample`));
+  playBtn.textContent = "■ Stop"; playNext();
 };
 render();
 </script>

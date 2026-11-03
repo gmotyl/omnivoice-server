@@ -42,6 +42,9 @@ def encode_ogg(audio: np.ndarray, out: Path) -> None:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--force", action="store_true")
+    p.add_argument("--only", help="id prefix: render only these new voices, skip the installed ones (e.g. vb-)")
+    p.add_argument("--langs", help="comma list: render every voice in each of these languages (default: its own)")
+    p.add_argument("--manifest", default="manifest.json")
     a = p.parse_args()
     for d in (VOICES, SAMPLES):
         d.mkdir(exist_ok=True)
@@ -50,7 +53,7 @@ def main() -> None:
     manifest = []
 
     # New candidates from reference clips.
-    for meta_path in sorted(REFS.glob("*.json")):
+    for meta_path in sorted(REFS.glob(f"{a.only or ''}*.json")):
         vid = meta_path.stem
         meta = json.loads(meta_path.read_text())
         pt = VOICES / f"{vid}.pt"
@@ -63,24 +66,30 @@ def main() -> None:
         manifest.append({"id": vid, "status": "new", **{k: v for k, v in meta.items() if k != "ref_text"}})
 
     # Existing voices, for a side-by-side comparison.
-    for pt in sorted((ROOT / "voices").glob("*.pt")):
+    for pt in [] if a.only else sorted((ROOT / "voices").glob("*.pt")):
         meta = json.loads((ROOT / "voices" / f"{pt.stem}.json").read_text())
         manifest.append({"id": pt.stem, "status": "installed", "source": "voice design", "licence": "CC-BY-NC (model)",
                          "language": meta["language"], "locale": "pl-PL" if meta["language"] == "pl" else "en-GB",
                          "description": meta.get("description", "")})
 
     for item in manifest:
-        out = SAMPLES / f"{item['id']}.ogg"
-        if out.exists() and not a.force:
-            continue
+        langs = a.langs.split(",") if a.langs else [item["language"]]
+        item["samples"] = []
         src = VOICES if item["status"] == "new" else ROOT / "voices"
-        prompt = VoiceClonePrompt.load(str(src / f"{item['id']}.pt"))
-        lang = item["language"]
-        audio = model.generate(text=SENTENCE[lang], language=lang, voice_clone_prompt=prompt, num_step=STEPS)[0]
-        encode_ogg(np.asarray(audio, dtype=np.float32), out)
-        print(f"ok {item['id']}: {len(audio) / SR:.1f}s", flush=True)
+        prompt = None
+        for lang in langs:
+            # Native-language sample keeps the old name so earlier pages stay valid.
+            fname = f"{item['id']}.ogg" if lang == item["language"] else f"{item['id']}.{lang}.ogg"
+            item["samples"].append({"lang": lang, "file": fname})
+            out = SAMPLES / fname
+            if out.exists() and not a.force:
+                continue
+            prompt = prompt or VoiceClonePrompt.load(str(src / f"{item['id']}.pt"))
+            audio = model.generate(text=SENTENCE[lang], language=lang, voice_clone_prompt=prompt, num_step=STEPS)[0]
+            encode_ogg(np.asarray(audio, dtype=np.float32), out)
+            print(f"ok {item['id']} [{lang}]: {len(audio) / SR:.1f}s", flush=True)
 
-    (HERE / "manifest.json").write_text(json.dumps({"sentence": SENTENCE, "steps": STEPS, "voices": manifest},
+    (HERE / a.manifest).write_text(json.dumps({"sentence": SENTENCE, "steps": STEPS, "voices": manifest},
                                                    ensure_ascii=False, indent=1) + "\n")
     print(f"manifest: {len(manifest)} voices")
 
