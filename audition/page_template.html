@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OmniVoice voices — pick for the panel</title>
+<style>
+:root {
+  --bg: #f6f6f4; --surface: #ffffff; --ink: #1d1d1b; --muted: #5d5d58; --line: #dcdcd6;
+  --accent: #2456c9; --accent-ink: #ffffff; --keep: #1d7a46; --keep-bg: #e3f3e9;
+  --drop: #9a3a2c; --drop-bg: #f7e6e2; --warn: #8a5a00; --warn-bg: #fbf0d6; --focus: #2456c9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --surface: #20201e; --ink: #ececea; --muted: #a8a8a2; --line: #3a3a36;
+    --accent: #7ea2ff; --accent-ink: #10131c; --keep: #7fd6a2; --keep-bg: #1c3326;
+    --drop: #f0a090; --drop-bg: #3a2420; --warn: #f0c46a; --warn-bg: #3a2f16; --focus: #7ea2ff;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 120px; }
+h1 { font-size: 20px; margin: 0 0 6px; }
+.sub { color: var(--muted); max-width: 75ch; margin: 0 0 14px; }
+.sub q { color: var(--ink); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; position: sticky; top: 0; z-index: 2; }
+.group { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.group > span { color: var(--muted); font-size: 12px; margin-right: 2px; }
+.chip { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px;
+  padding: 3px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+select, input[type=search], input[type=text] { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+input[type=search] { width: 150px; }
+.count { margin-left: auto; color: var(--muted); font-size: 12px; }
+.btn { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; margin-top: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px; }
+.card.keep { border-color: var(--keep); box-shadow: inset 3px 0 0 var(--keep); }
+.card.drop { opacity: .55; }
+.card.playing { box-shadow: 0 0 0 2px var(--accent); }
+.head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.name { font-weight: 600; font-family: ui-monospace, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag { font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.tag.cat { color: var(--keep); border-color: var(--keep); }
+.tag.warn { color: var(--warn); background: var(--warn-bg); border-color: transparent; }
+audio { width: 100%; height: 34px; }
+.actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.actions .btn[aria-pressed="true"].k { background: var(--keep-bg); color: var(--keep); border-color: var(--keep); }
+.actions .btn[aria-pressed="true"].d { background: var(--drop-bg); color: var(--drop); border-color: var(--drop); }
+.pickrow { display: none; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.card.keep .pickrow { display: flex; }
+.pickrow input[type=text] { width: 140px; font-family: ui-monospace, monospace; }
+
+.tray { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); z-index: 3; }
+.tray-inner { max-width: 1100px; margin: 0 auto; padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; }
+.tray-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.tray textarea { width: 100%; height: 110px; font: 12px/1.4 ui-monospace, monospace; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px; resize: vertical; }
+.status { font-size: 12px; color: var(--keep); }
+.note { font-size: 12px; color: var(--muted); max-width: 80ch; }
+.note.top { margin: 0 0 12px; }
+summary { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>OmniVoice voices — pick for the panel</h1>
+  <p class="sub" id="sub"></p>
+  <p class="note top">The samples are OmniVoice renders at the server's default quality, not the original recordings. VCTK and MLS clips are CC-BY 4.0 (attribution kept in each voice's description). The OmniVoice weights are CC-BY-NC, so this is for personal use only. Renders flagged <i>long</i> took much longer than the sentence needs, which usually means stutter or artifacts.</p>
+
+  <div class="filters" role="toolbar" aria-label="Filters">
+    <div class="group" data-f="language"><span>Language</span></div>
+    <div class="group" data-f="gender"><span>Gender</span></div>
+    <div class="group" data-f="source"><span>Source</span></div>
+    <div class="group"><span>Accent</span><select id="accent"><option value="">any</option></select></div>
+    <div class="group" data-f="state"><span>Show</span></div>
+    <input type="search" id="q" placeholder="Search id, region…" aria-label="Search">
+    <button class="btn" id="playall">▶ Play visible</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+</main>
+
+<div class="tray">
+  <div class="tray-inner">
+    <div class="tray-row">
+      <b id="picked">0 kept</b>
+      <label><input type="radio" name="mode" value="replace" checked> catalog = kept voices only</label>
+      <label><input type="radio" name="mode" value="add"> add kept voices to the catalog</label>
+      <button class="btn primary" id="copy">Copy prompt for the agent</button>
+      <span class="status" id="status" role="status"></span>
+    </div>
+    <details><summary class="note">Show prompt text</summary><textarea id="prompt" readonly aria-label="Agent prompt"></textarea></details>
+
+  </div>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const V = DATA.voices;
+const state = { language: "all", gender: "all", source: "all", state: "not-dropped", accent: "", q: "" };
+const pick = {};      // id -> "keep" | "drop"
+const names = {};     // id -> voice name for voices/
+const defaults = {};  // lang -> id
+
+const srcKey = v => v.status === "installed" ? "installed" : v.source.startsWith("VCTK") ? "vctk" : "mls";
+const median = (() => { const m = {}; for (const l of ["pl", "en"]) { const d = V.filter(v => v.language === l).map(v => v.sampleS).sort((a, b) => a - b); m[l] = d[Math.floor(d.length / 2)]; } return m; })();
+const isLong = v => v.sampleS > median[v.language] * 1.45;
+function suggestName(v) {
+  if (v.status === "installed") return v.id;
+  const g = v.gender === "female" ? "f" : "m";
+  return v.language === "pl" ? `pl-${g}-mls${v.speaker}` : `${v.locale.toLowerCase()}-${g}-${v.speaker}`;
+}
+function label(v) {
+  if (v.status === "installed") return null;
+  if (v.language === "pl") return `Polish, LibriVox narrator ${v.speaker}, ${v.gender}`;
+  return `${v.accent.replace("NorthernIrish", "Northern Irish")}, ${v.gender}, ${v.age}, ${v.region} (VCTK ${v.speaker})`;
+}
+V.forEach(v => { names[v.id] = suggestName(v); });
+
+document.getElementById("sub").innerHTML =
+  `${V.length} voices, each reading the same sentence for its language. Polish: <q>${DATA.sentence.pl}</q> English: <q>${DATA.sentence.en}</q> ` +
+  `Mark voices <b>Keep</b> or <b>Drop</b>, choose a default per language, then copy the prompt at the bottom into an agent session.`;
+
+const FILTERS = {
+  language: [["all", "all"], ["pl", "Polish"], ["en", "English"]],
+  gender: [["all", "all"], ["female", "female"], ["male", "male"]],
+  source: [["all", "all"], ["vctk", "new · VCTK"], ["mls", "new · LibriVox PL"], ["installed", "installed"]],
+  state: [["not-dropped", "hide dropped"], ["all", "all"], ["keep", "kept only"], ["unrated", "unrated"]],
+};
+for (const [f, opts] of Object.entries(FILTERS)) {
+  const g = document.querySelector(`.group[data-f="${f}"]`);
+  for (const [val, text] of opts) {
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = text; b.dataset.val = val;
+    b.setAttribute("aria-pressed", String(state[f] === val));
+    b.onclick = () => { state[f] = val; g.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c.dataset.val === val))); render(); };
+    g.appendChild(b);
+  }
+}
+const accents = [...new Set(V.map(v => v.accent).filter(Boolean))].sort();
+const accSel = document.getElementById("accent");
+accents.forEach(a => accSel.add(new Option(a.replace("NorthernIrish", "Northern Irish"), a)));
+accSel.onchange = () => { state.accent = accSel.value; render(); };
+document.getElementById("q").oninput = e => { state.q = e.target.value.toLowerCase(); render(); };
+
+function gender(v) {
+  if (v.gender) return v.gender;
+  const d = v.description || "";
+  return /\bfemale\b/.test(d) || /-f\d?$|female/.test(v.id) ? "female" : /\bmale\b/.test(d) || /-m\d?$|male/.test(v.id) ? "male" : "";
+}
+function visible(v) {
+  if (state.language !== "all" && v.language !== state.language) return false;
+  if (state.gender !== "all" && gender(v) !== state.gender) return false;
+  if (state.source !== "all" && srcKey(v) !== state.source) return false;
+  if (state.accent && v.accent !== state.accent) return false;
+  const p = pick[v.id];
+  if (state.state === "not-dropped" && p === "drop") return false;
+  if (state.state === "keep" && p !== "keep") return false;
+  if (state.state === "unrated" && p) return false;
+  if (state.q && !`${v.id} ${v.region || ""} ${v.accent || ""} ${v.description || ""}`.toLowerCase().includes(state.q)) return false;
+  return true;
+}
+
+const grid = document.getElementById("grid");
+const cards = {};
+for (const v of V) {
+  const c = document.createElement("article");
+  c.className = "card"; c.dataset.id = v.id;
+  const tags = [v.locale, gender(v) + (v.gender_estimated ? " (est.)" : ""), v.age && `age ${v.age}`,
+    v.accent && v.accent !== "Polish" && v.accent.replace("NorthernIrish", "N. Irish"), v.region && (v.language === "pl" ? `book: ${v.region.replace(/_\d+$/, "").replace(/_/g, " ")}` : v.region), srcKey(v) === "installed" ? "installed" : v.source]
+    .filter(Boolean).map(t => `<span class="tag">${t}</span>`).join("");
+  c.innerHTML = `
+    <div class="head"><span class="name">${v.id}</span><span class="tag">${v.sampleS}s</span></div>
+    <div class="tags">${tags}${v.inCatalog ? '<span class="tag cat">in panel catalog</span>' : ""}${isLong(v) ? '<span class="tag warn">long — check for artifacts</span>' : ""}</div>
+    ${v.description ? `<div class="note">${v.description}</div>` : ""}
+    <audio controls preload="none" src="${v.audio}"></audio>
+    <div class="actions">
+      <button class="btn k" aria-pressed="false">Keep</button>
+      <button class="btn d" aria-pressed="false">Drop</button>
+    </div>
+    <div class="pickrow">
+      <label>name <input type="text" value="${names[v.id]}" ${v.status === "installed" ? "disabled" : ""} aria-label="Voice name"></label>
+      <label><input type="radio" name="def-${v.language}"> default for ${v.language.toUpperCase()}</label>
+    </div>`;
+  const [keep, drop] = c.querySelectorAll(".actions .btn");
+  const setPick = val => {
+    pick[v.id] = pick[v.id] === val ? undefined : val;
+    if (pick[v.id] !== "keep" && defaults[v.language] === v.id) delete defaults[v.language];
+    keep.setAttribute("aria-pressed", String(pick[v.id] === "keep"));
+    drop.setAttribute("aria-pressed", String(pick[v.id] === "drop"));
+    c.classList.toggle("keep", pick[v.id] === "keep"); c.classList.toggle("drop", pick[v.id] === "drop");
+    render();
+  };
+  keep.onclick = () => setPick("keep"); drop.onclick = () => setPick("drop");
+  c.querySelector(".pickrow input[type=text]").oninput = e => { names[v.id] = e.target.value.trim(); updatePrompt(); };
+  c.querySelector(".pickrow input[type=radio]").onchange = () => { defaults[v.language] = v.id; updatePrompt(); };
+  c.querySelector("audio").onplay = e => document.querySelectorAll("audio").forEach(a => { if (a !== e.target) a.pause(); });
+  cards[v.id] = c; grid.appendChild(c);
+}
+
+function render() {
+  let n = 0;
+  for (const v of V) { const show = visible(v); cards[v.id].hidden = !show; if (show) n++; }
+  document.getElementById("count").textContent = `${n} of ${V.length} shown`;
+  updatePrompt();
+}
+
+function updatePrompt() {
+  const kept = V.filter(v => pick[v.id] === "keep");
+  document.getElementById("picked").textContent = `${kept.length} kept`;
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  if (!kept.length) { document.getElementById("prompt").value = "Keep at least one voice to build the prompt."; return; }
+  const newOnes = kept.filter(v => v.status === "new");
+  const lines = kept.map(v => {
+    const l = label(v);
+    return v.status === "new"
+      ? `- ${v.id} → ${names[v.id]} | ${v.locale} | ${gender(v)} | label "${l}"`
+      : `- ${v.id} (already installed, keep its current catalog label)`;
+  });
+  const def = ["pl", "en"].map(l => `${l}: ${defaults[l] ? names[defaults[l]] : "(not chosen, keep the current default)"}`).join(", ");
+  document.getElementById("prompt").value =
+`Update my Pavilio OmniVoice voices with the voices I picked on the audition page.
+
+Kept voices (audition id → voice name | locale | gender | catalog label):
+${lines.join("\n")}
+
+Defaults: ${def}
+Catalog mode: ${mode === "replace" ? "REPLACE: OPENAI_CATALOG should list exactly the kept voices" : "ADD: append the kept voices to OPENAI_CATALOG and keep the existing entries"}
+
+Steps:
+1. omnivoice-server (/srv/git/prv/omnivoice-server):${newOnes.length ? ` for each new voice, copy audition/voices/<audition id>.{pt,json,wav} to voices/<voice name>.{pt,json,wav}.` : " nothing to copy."} Run ./omnivoicectl restart, check that GET http://127.0.0.1:8890/v1/voices lists them, synthesize one sentence with each, then commit.
+2. pavilio: following the workspace rules (own worktree, branch, PR to main), update panel/src/features/speech/openaiVoices.ts so that OPENAI_CATALOG matches the catalog mode above (multilingual: false; label as given) and OPENAI_VOICE_MAP uses the defaults above (default = the pl voice). Run the speech tests, then open the PR.
+3. Tell me when the PR is open, so I can select the voices in Settings → Speech.`;
+}
+document.querySelectorAll('input[name=mode]').forEach(r => r.onchange = updatePrompt);
+
+document.getElementById("copy").onclick = async () => {
+  const ta = document.getElementById("prompt"), st = document.getElementById("status");
+  try { await navigator.clipboard.writeText(ta.value); st.textContent = "Copied."; }
+  catch {
+    ta.closest("details").open = true; ta.focus(); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch {}
+    st.textContent = ok ? "Copied." : "Text selected. Press Ctrl+C to copy.";
+  }
+  setTimeout(() => { st.textContent = ""; }, 4000);
+};
+
+let queue = [];
+function playNext() {
+  document.querySelectorAll(".card.playing").forEach(c => c.classList.remove("playing"));
+  const id = queue.shift(); if (!id) { document.getElementById("playall").textContent = "▶ Play visible"; return; }
+  const c = cards[id], a = c.querySelector("audio");
+  c.classList.add("playing"); c.scrollIntoView({ block: "nearest" });
+  a.currentTime = 0; a.onended = () => { a.onended = null; playNext(); }; a.play();
+}
+document.getElementById("playall").onclick = e => {
+  if (queue.length || document.querySelector(".card.playing")) {
+    queue = []; document.querySelectorAll("audio").forEach(a => { a.pause(); a.onended = null; });
+    document.querySelectorAll(".card.playing").forEach(c => c.classList.remove("playing"));
+    e.target.textContent = "▶ Play visible"; return;
+  }
+  queue = V.filter(v => !cards[v.id].hidden).map(v => v.id);
+  e.target.textContent = "■ Stop"; playNext();
+};
+render();
+</script>
+</body>
+</html>
