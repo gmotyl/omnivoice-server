@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { createRelayApp } from "../app.mjs";
+import { createRelayApp, toVoiceInfo } from "../app.mjs";
 
 const ORIGIN = "https://motyl.dev";
 const MP3 = Buffer.from([0x49, 0x44, 0x33, 0x04, 0x00]); // "ID3" header bytes
@@ -34,10 +34,10 @@ async function stubOmniVoice() {
       if (req.method === "GET" && req.url === "/health") {
         if (!state.healthy) {
           res.writeHead(503, { "content-type": "application/json" });
-          return res.end(JSON.stringify({ status: "loading" }));
+          return res.end(JSON.stringify({ ok: false }));
         }
         res.writeHead(200, { "content-type": "application/json" });
-        return res.end(JSON.stringify({ status: "ok" }));
+        return res.end(JSON.stringify(state.healthBody ?? { ok: true, device: "cuda:0" }));
       }
       if (req.method === "POST" && req.url === "/v1/audio/speech") {
         state.speech.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
@@ -216,4 +216,251 @@ test("other origin gets no CORS headers and 403 on POST", async (t) => {
   const preflight = await app(new Request("http://relay.test/", { method: "OPTIONS", headers: { origin: EVIL } }));
   assert.equal(preflight.headers.get("access-control-allow-origin"), null);
   assert.equal(preflight.headers.get("access-control-allow-methods"), null);
+});
+
+const CORS_NAMES = [
+  "access-control-allow-origin",
+  "access-control-allow-methods",
+  "access-control-allow-headers",
+  "access-control-expose-headers",
+  "access-control-allow-private-network",
+];
+
+/** A deferred promise the test settles by hand. */
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+const voicesResponse = (voices) => Response.json({ voices });
+const mp3Response = () => new Response(MP3, { status: 200, headers: { "content-type": "audio/mpeg" } });
+
+/**
+ * A fake `fetch` for OmniVoice: every call is recorded; `/v1/voices` and `/v1/audio/speech` are
+ * answered by `routes` (a function per path, returning a Response or a promise of one).
+ */
+function fakeFetch(routes) {
+  const calls = [];
+  const fetch = async (url, init = {}) => {
+    const path = new URL(url).pathname;
+    calls.push({ path, method: init.method ?? "GET" });
+    const route = routes[path];
+    if (!route) throw new TypeError(`fetch failed: no route for ${path}`);
+    return route(init);
+  };
+  return { fetch, calls };
+}
+
+test("a POST with no engine or engine edge is a 400 that reaches neither Edge nor OmniVoice", async () => {
+  const { fetch, calls } = fakeFetch({
+    "/v1/voices": () => voicesResponse([record("pl-female")]),
+    "/v1/audio/speech": () => mp3Response(),
+  });
+  const app = createRelayApp({ omnivoiceUrl: "http://omnivoice.test", allowedOrigins: [ORIGIN], fetch });
+
+  // A valid Edge voice: without the guard, anytts' relay would hand this to its Edge engine.
+  for (const body of [
+    { text: "Hi", voice: "en-US-AvaMultilingualNeural" },
+    { engine: "edge", text: "Hi", voice: "en-US-AvaMultilingualNeural" },
+  ]) {
+    const res = await app(post(body));
+    assert.equal(res.status, 400);
+    const answer = await res.json();
+    // `kind` stays what the anytts client maps; `error` says why.
+    assert.equal(answer.kind, "unknown-voice");
+    assert.equal(answer.error, "only engine openai is served");
+  }
+  assert.equal(calls.filter((c) => c.path !== "/v1/voices").length, 0);
+});
+
+test("a request without Origin is served, with no CORS headers", async (t) => {
+  const ov = await stubOmniVoice();
+  t.after(ov.close);
+  const app = relay(ov.url);
+
+  const res = await app(post({ engine: "openai", text: "Hi", voice: "pl-female" }, null));
+  assert.equal(res.status, 200);
+  assert.equal(ov.state.speech.length, 1);
+  // anytts adds an expose header to its audio response; without an allowed origin it is stripped.
+  for (const name of CORS_NAMES) assert.equal(res.headers.get(name), null, name);
+  assert.equal((await app(get("/health", null))).status, 200);
+});
+
+test("a disallowed origin gets none of the CORS headers on any route", async (t) => {
+  const ov = await stubOmniVoice();
+  t.after(ov.close);
+  const app = relay(ov.url);
+  const EVIL = "https://evil.example";
+
+  const responses = [
+    await app(post({ engine: "openai", text: "Hi", voice: "pl-female" }, EVIL)),
+    await app(get("/voices", EVIL)),
+    await app(get("/health", EVIL)),
+    await app(
+      new Request("http://relay.test/", {
+        method: "OPTIONS",
+        headers: { origin: EVIL, "access-control-request-method": "POST", "access-control-request-private-network": "true" },
+      }),
+    ),
+  ];
+  for (const res of responses) {
+    for (const name of CORS_NAMES) assert.equal(res.headers.get(name), null, `${res.status} ${name}`);
+  }
+  assert.equal(ov.state.speech.length, 0);
+});
+
+test("/voices serves the last known catalog while OmniVoice is down, 502 when none ever loaded", async () => {
+  let up = true;
+  const { fetch } = fakeFetch({
+    "/v1/voices": () => {
+      if (!up) throw new TypeError("fetch failed");
+      return voicesResponse([AUTO, record("pl-female")]);
+    },
+  });
+  const app = createRelayApp({ omnivoiceUrl: "http://omnivoice.test", allowedOrigins: [ORIGIN], fetch });
+  const loaded = await (await app(get("/voices"))).json();
+  assert.deepEqual(loaded.map((v) => v.id), ["pl-female"]);
+
+  up = false;
+  const stale = await app(get("/voices"));
+  assert.equal(stale.status, 200);
+  assert.deepEqual(await stale.json(), loaded);
+
+  const never = relay(await deadUrl());
+  const none = await never(get("/voices"));
+  assert.equal(none.status, 502);
+  assert.deepEqual(await none.json(), { kind: "network" });
+});
+
+test("toVoiceInfo falls back for locale, gender and label", () => {
+  assert.deepEqual(toVoiceInfo({ id: "a", language: "en", locale: null, gender: null, label: null, multilingual: null }), {
+    id: "a",
+    label: "a",
+    locale: "en",
+    gender: "female",
+    multilingual: false,
+  });
+  assert.deepEqual(toVoiceInfo({ id: "b" }), { id: "b", label: "b", locale: "", gender: "female", multilingual: false });
+  assert.equal(toVoiceInfo({ id: "c", gender: "male" }).gender, "male");
+});
+
+test("the relay works once OmniVoice comes up after the relay started", async () => {
+  let up = false;
+  const down = () => {
+    throw new TypeError("fetch failed");
+  };
+  const { fetch } = fakeFetch({
+    "/v1/voices": () => (up ? voicesResponse([AUTO, record("pl-female")]) : down()),
+    "/health": () => (up ? Response.json({ ok: true }) : down()),
+    "/v1/audio/speech": () => (up ? mp3Response() : down()),
+  });
+  const app = createRelayApp({ omnivoiceUrl: "http://omnivoice.test", allowedOrigins: [ORIGIN], fetch });
+
+  assert.equal((await app(post({ engine: "openai", text: "Hi", voice: "pl-female" }))).status, 502);
+  assert.equal((await app(get("/health"))).status, 503);
+  assert.equal((await app(get("/voices"))).status, 502);
+
+  up = true;
+  const res = await app(post({ engine: "openai", text: "Hi", voice: "pl-female" }));
+  assert.equal(res.status, 200);
+  assert.deepEqual(Buffer.from(await res.arrayBuffer()), MP3);
+  assert.equal((await app(get("/health"))).status, 200);
+  assert.deepEqual((await (await app(get("/voices"))).json()).map((v) => v.id), ["pl-female"]);
+});
+
+test("an older /v1/voices answer never overwrites a newer catalog", async () => {
+  const answers = [];
+  const { fetch } = fakeFetch({
+    "/v1/voices": () => {
+      const d = deferred();
+      answers.push(d);
+      return d.promise;
+    },
+    "/v1/audio/speech": () => mp3Response(),
+  });
+  const app = createRelayApp({ omnivoiceUrl: "http://omnivoice.test", allowedOrigins: [ORIGIN], fetch });
+  // answers[0] is the warm-up refresh, still in flight; a /voices call starts a second one.
+  const listing = app(get("/voices"));
+  assert.equal(answers.length, 2);
+
+  // The newer refresh (a voice cloned meanwhile) lands first...
+  answers[1].resolve(voicesResponse([record("pl-female"), record("me")]));
+  assert.deepEqual((await (await listing).json()).map((v) => v.id), ["pl-female", "me"]);
+  // ...then the older one, with the catalog from before the clone.
+  answers[0].resolve(voicesResponse([record("pl-female")]));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const res = await app(post({ engine: "openai", text: "Hi", voice: "me" }));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("x-anytts-voice"), "me");
+
+  // And the last known catalog is the newer one.
+  const down = app(get("/voices"));
+  answers[2].reject(new TypeError("fetch failed"));
+  assert.deepEqual((await (await down).json()).map((v) => v.id), ["pl-female", "me"]);
+});
+
+test("health needs OmniVoice's body to say ok: true", async (t) => {
+  const ov = await stubOmniVoice();
+  t.after(ov.close);
+  const app = relay(ov.url);
+
+  ov.state.healthBody = { ok: false, device: "cuda:0" };
+  assert.equal((await app(get("/health"))).status, 503);
+  ov.state.healthBody = { status: "ok" };
+  assert.equal((await app(get("/health"))).status, 503);
+  ov.state.healthBody = { ok: true };
+  assert.equal((await app(get("/health"))).status, 200);
+
+  const { fetch } = fakeFetch({ "/health": () => new Response("not json", { status: 200 }) });
+  const garbled = createRelayApp({ omnivoiceUrl: "http://omnivoice.test", allowedOrigins: [ORIGIN], fetch });
+  assert.equal((await garbled(get("/health"))).status, 503);
+});
+
+test("a slow OmniVoice answer within 60 s is not cut off by the first-byte deadline", async (t) => {
+  const speech = deferred();
+  const speechCalled = deferred();
+  const { fetch, calls } = fakeFetch({
+    "/v1/voices": () => voicesResponse([record("pl-female")]),
+    // Only the first call is the real one: a timed-out first call would be retried by anytts.
+    "/v1/audio/speech": () => {
+      if (calls.filter((c) => c.path === "/v1/audio/speech").length > 1) throw new TypeError("retried");
+      speechCalled.resolve();
+      return speech.promise;
+    },
+  });
+  const app = createRelayApp({ omnivoiceUrl: "http://omnivoice.test", allowedOrigins: [ORIGIN], fetch });
+  assert.equal((await app(get("/voices"))).status, 200);
+
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const pending = app(post({ engine: "openai", text: "A long paragraph", voice: "pl-female" }));
+  await speechCalled.promise;
+  // OmniVoice returns the whole mp3 at once: a long unit on a busy GPU takes a while.
+  t.mock.timers.tick(45_000);
+  speech.resolve(mp3Response());
+  const res = await pending;
+  assert.equal(res.status, 200);
+  assert.deepEqual(Buffer.from(await res.arrayBuffer()), MP3);
+  assert.equal(calls.filter((c) => c.path === "/v1/audio/speech").length, 1);
+});
+
+test("an allowed origin's private-network preflight is allowed", async (t) => {
+  const ov = await stubOmniVoice();
+  t.after(ov.close);
+  const app = relay(ov.url);
+  const preflight = (headers) => app(new Request("http://relay.test/", { method: "OPTIONS", headers }));
+
+  const pna = await preflight({ origin: ORIGIN, "access-control-request-method": "POST", "access-control-request-private-network": "true" });
+  assert.equal(pna.status, 204);
+  assert.equal(pna.headers.get("access-control-allow-origin"), ORIGIN);
+  assert.equal(pna.headers.get("access-control-allow-private-network"), "true");
+
+  // Only asked for: a plain preflight does not get it.
+  const plain = await preflight({ origin: ORIGIN, "access-control-request-method": "POST" });
+  assert.equal(plain.headers.get("access-control-allow-private-network"), null);
 });

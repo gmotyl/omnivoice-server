@@ -1,9 +1,19 @@
 import { createRelayHandler } from "anytts/server";
 
 const CORS_EXPOSE = "x-anytts-engine, x-anytts-voice, retry-after";
-const CORS_HEADERS = ["access-control-allow-origin", "access-control-allow-methods", "access-control-allow-headers", "access-control-expose-headers"];
+const CORS_HEADERS = [
+  "access-control-allow-origin",
+  "access-control-allow-methods",
+  "access-control-allow-headers",
+  "access-control-expose-headers",
+  "access-control-allow-private-network",
+];
 const HEALTH_TIMEOUT_MS = 3000;
 const VOICES_TIMEOUT_MS = 5000;
+// OmniVoice answers with the whole mp3 once generation is done (no streaming), so the first byte
+// arrives only after the full unit is synthesized: a long unit on a busy GPU can take tens of
+// seconds. anytts' openai default (15 s) would cut those off and retry, doubling the GPU work.
+const OMNIVOICE_FIRST_BYTE_MS = 60_000;
 
 const json = (status, body) => Response.json(body, { status });
 
@@ -29,12 +39,23 @@ export function createRelayApp({ omnivoiceUrl, allowedOrigins, fetch = globalThi
   const allowed = new Set(allowedOrigins);
   /** The catalog last read from OmniVoice and the relay handler built around it. */
   let current = { key: "", catalog: [], handler: undefined };
+  /** Refreshes are numbered in start order; `applied` is the newest one whose answer was kept. */
+  let started = 0;
+  let applied = 0;
 
-  /** Re-reads `/v1/voices`; rebuilds the handler only when the catalog changed. Throws when unreachable. */
+  /**
+   * Re-reads `/v1/voices`; rebuilds the handler only when the catalog changed. Throws when
+   * unreachable. Refreshes may overlap (the warm-up, a `/voices` call, a POST without a handler):
+   * an answer that lands after a newer refresh's answer is dropped, so a stale catalog never
+   * replaces a newer one.
+   */
   async function refresh() {
+    const seq = ++started;
     const res = await fetch(`${base}/v1/voices`, { signal: AbortSignal.timeout(VOICES_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`OmniVoice /v1/voices answered ${res.status}`);
     const { voices = [] } = await res.json();
+    if (seq < applied) return current;
+    applied = seq;
     // The model-chosen `auto` voice has no locale and varies per call: not a catalog voice.
     const catalog = voices.filter((v) => v && v.id && v.id !== "auto").map(toVoiceInfo);
     const key = JSON.stringify(catalog);
@@ -44,7 +65,9 @@ export function createRelayApp({ omnivoiceUrl, allowedOrigins, fetch = globalThi
         ? undefined
         : createRelayHandler({
             tts: {
-              engines: { openai: { baseUrl: base, catalog, languageField: "language", fetch } },
+              engines: {
+                openai: { baseUrl: base, catalog, languageField: "language", firstByteMs: OMNIVOICE_FIRST_BYTE_MS, fetch },
+              },
               defaultEngine: "openai",
               // One GPU: OmniVoice serialises generation anyway.
               scheduler: { concurrency: 1, tiers: [{ name: "default" }] },
@@ -66,7 +89,8 @@ export function createRelayApp({ omnivoiceUrl, allowedOrigins, fetch = globalThi
       return json(400, { error: "invalid JSON body" });
     }
     // Only OmniVoice is served here: no standalone Edge proxy, no other engines.
-    if (engine !== "openai") return json(400, { kind: "unknown-voice" });
+    // `kind` is what the anytts client maps (a pair this relay cannot serve); `error` says why.
+    if (engine !== "openai") return json(400, { kind: "unknown-voice", error: "only engine openai is served" });
     let { handler } = current;
     if (!handler) {
       try {
@@ -91,9 +115,10 @@ export function createRelayApp({ omnivoiceUrl, allowedOrigins, fetch = globalThi
   async function health() {
     try {
       const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
-      if (res.ok) return json(200, { ok: true });
+      // OmniVoice's body says `ok: true` only once the model is loaded.
+      if (res.ok && (await res.json())?.ok === true) return json(200, { ok: true });
     } catch {
-      // unreachable
+      // unreachable, timed out, or not JSON
     }
     return json(503, { ok: false });
   }
@@ -129,6 +154,10 @@ export function createRelayApp({ omnivoiceUrl, allowedOrigins, fetch = globalThi
       if (req.method === "OPTIONS") {
         headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
         headers.set("access-control-allow-headers", "content-type");
+        // Private Network Access: a public page (https://motyl.dev) calling a tailnet host.
+        if (req.headers.get("access-control-request-private-network") === "true") {
+          headers.set("access-control-allow-private-network", "true");
+        }
       }
     }
     headers.append("vary", "Origin");
