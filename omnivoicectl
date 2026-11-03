@@ -55,15 +55,23 @@ RELAY_SERVE_HTTPS_PORT="${RELAY_SERVE_HTTPS_PORT:-8443}"
 RELAY_MIN_NODE=22
 
 # ours <pid> <script> <cwd>: the pid is a live process running <script> from <cwd> (the ctl
-# starts the server from $DIR and the relay from $DIR/relay). Anything else (a reused pid, a
-# sibling clone's process) is not ours and is never signalled.
+# starts the server from $DIR and the relay from $DIR/relay). One argv entry must name exactly
+# this checkout's script: <script> or ./<script> (relative to <cwd>) or <cwd>/<script>. A same
+# basename elsewhere (/tmp/server.py), a reused pid or a sibling clone's process is not ours and
+# is never signalled.
 ours() {
-  local pid="$1" script="$2" cwd="$3" cmd
+  local pid="$1" script="$2" cwd="$3" arg match=
+  local -a argv=()
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)" || return 1
-  [[ " $cmd" == *[/\ ]"$script "* ]] || return 1
-  [[ "$(readlink "/proc/$pid/cwd" 2>/dev/null)" == "$cwd" ]]
+  [[ "$(readlink "/proc/$pid/cwd" 2>/dev/null)" == "$cwd" ]] || return 1
+  mapfile -d '' -t argv <"/proc/$pid/cmdline" 2>/dev/null || return 1
+  for arg in "${argv[@]}"; do
+    case "$arg" in
+      "$script" | "./$script" | "$cwd/$script") match=1; break ;;
+    esac
+  done
+  [[ -n "$match" ]]
 }
 
 # alive <pidfile> <script> <cwd>: the pid file names a process of ours. A pid file that names
@@ -297,8 +305,8 @@ for hostport, web in (cfg.get("Web") or {}).items():
         continue
     for path, h in (web.get("Handlers") or {}).items():
         proxy = (h or {}).get("Proxy") or ""
-        bare = proxy.split("://", 1)[-1].rstrip("/")
-        if bare in (target, f"localhost:{port}"):
+        # The relay serves plain HTTP: an https:// (or schemeless) upstream is a wrong mapping.
+        if proxy.rstrip("/") in (f"http://{target}", f"http://localhost:{port}"):
             found = f"https://{hostport}{path}"
         elif proxy:
             other.append(f"{path} -> {proxy}")
