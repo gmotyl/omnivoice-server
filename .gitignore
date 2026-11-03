@@ -5,3 +5,4 @@ server.log
 run/
 logs/
 voices-custom/
+relay/node_modules/

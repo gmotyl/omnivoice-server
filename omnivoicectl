@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# Manage the local OmniVoice TTS server (OpenAI-compatible, 127.0.0.1:8890).
-# Usage: omnivoicectl start|stop|restart|status|log
+# Manage the local OmniVoice TTS server (OpenAI-compatible, 127.0.0.1:8890) and its browser
+# relay (relay/, anytts relay protocol with an origin allowlist, 127.0.0.1:8891).
+# Usage: omnivoicectl start|stop|restart|status|log|relay-log
 # Safe to call from the WSL [boot] command: it sets its own PATH/HOME and never blocks.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 PIDFILE="$DIR/run/omnivoice.pid"
 LOG="$DIR/logs/server.log"
+RELAY_PIDFILE="$DIR/run/relay.pid"
+RELAY_LOG="$DIR/logs/relay.log"
+
+# The caller's PATH, before it is pinned below: the node the caller would run (fnm, nvm) is on
+# it, while the pinned system dirs may hold an older one.
+CALLER_PATH="${PATH:-}"
 
 # The boot command runs with a near-empty environment; pin everything the server needs.
 export HOME="${HOME:-/root}"
@@ -15,21 +22,54 @@ export HF_HOME="${HF_HOME:-/root/.cache/huggingface}"
 # Model is cached; don't let a boot without network block on a hub lookup.
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 PORT="${OMNIVOICE_PORT:-8890}"
+RELAY_PORT="${RELAY_PORT:-8891}"
+RELAY_HOST="${RELAY_HOST:-127.0.0.1}"
+RELAY_MIN_NODE=22
 
-pid_alive() {
-  [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+alive() { # alive <pidfile>
+  [[ -f "$1" ]] && kill -0 "$(cat "$1")" 2>/dev/null
 }
 
-health() {
-  python3 - "$PORT" <<'PY' 2>/dev/null
+pid_alive() { alive "$PIDFILE"; }
+
+http_ok() { # http_ok <url>: 0 when the URL answers 2xx within 2 s
+  python3 - "$1" <<'PY' 2>/dev/null
 import sys, urllib.request
-urllib.request.urlopen(f"http://127.0.0.1:{sys.argv[1]}/health", timeout=2).read()
+urllib.request.urlopen(sys.argv[1], timeout=2).read()
 PY
 }
 
-start() {
+health() { http_ok "http://127.0.0.1:$PORT/health"; }
+
+stop_pid() { # stop_pid <pidfile> <name>: TERM, up to 10 s, then KILL
+  local pidfile="$1" name="$2" pid
+  if ! alive "$pidfile"; then
+    rm -f "$pidfile"
+    echo "$name: not running"
+    return 0
+  fi
+  pid="$(cat "$pidfile")"
+  kill "$pid" 2>/dev/null || true
+  for _ in $(seq 1 50); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.2
+  done
+  if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid" 2>/dev/null || true; fi
+  rm -f "$pidfile"
+  echo "$name: stopped (pid $pid)"
+}
+
+# --- server -----------------------------------------------------------------------------------
+
+start_server() {
   if pid_alive; then
-    echo "already running (pid $(cat "$PIDFILE"))"
+    echo "server: already running (pid $(cat "$PIDFILE"))"
+    return 0
+  fi
+  # Something else (another clone, a hand-started server) already serves this port: a second
+  # GPU process would only fail to bind after loading the model, so leave it be.
+  if health; then
+    echo "server: already answering on 127.0.0.1:$PORT (not started by this ctl), not starting another"
     return 0
   fi
   mkdir -p "$DIR/run" "$DIR/logs"
@@ -37,39 +77,155 @@ start() {
   # Detach fully so the caller (boot command, terminal) can exit.
   setsid nohup "$DIR/.venv/bin/python" -W ignore server.py >>"$LOG" 2>&1 </dev/null &
   echo $! >"$PIDFILE"
-  echo "started (pid $!), log: $LOG"
+  echo "server: started (pid $!), log: $LOG"
+}
+
+stop_server() { stop_pid "$PIDFILE" server; }
+
+server_status() {
+  if pid_alive; then
+    if health; then
+      echo "server: running (pid $(cat "$PIDFILE")), healthy on 127.0.0.1:$PORT"
+    else
+      echo "server: running (pid $(cat "$PIDFILE")), not answering /health yet (model loading?)"
+      return 1
+    fi
+  elif health; then
+    echo "server: healthy on 127.0.0.1:$PORT, but not started by this ctl (no $PIDFILE)"
+  else
+    echo "server: not running"
+    return 3
+  fi
+}
+
+# --- relay ------------------------------------------------------------------------------------
+
+node_major() { # node_major <node>: prints the major version, fails when it does not run
+  local v
+  v="$("$1" --version 2>/dev/null)" || return 1
+  v="${v#v}"
+  printf '%s' "${v%%.*}"
+}
+
+# The node binary for the relay: $RELAY_NODE, else `node` on the caller's PATH, else fnm's
+# default alias (the boot command's PATH has neither). Must be >= RELAY_MIN_NODE.
+relay_node() {
+  local candidates=() c major
+  if [[ -n "${RELAY_NODE:-}" ]]; then
+    candidates=("$RELAY_NODE")
+  else
+    c="$(PATH="$CALLER_PATH" command -v node 2>/dev/null || true)"
+    [[ -n "$c" ]] && candidates+=("$c")
+    candidates+=("${FNM_DIR:-$HOME/.fnm}/aliases/default/bin/node" \
+      "$HOME/.local/share/fnm/aliases/default/bin/node")
+  fi
+  for c in "${candidates[@]}"; do
+    [[ -x "$c" ]] || continue
+    major="$(node_major "$c")" || continue
+    if [[ "$major" =~ ^[0-9]+$ ]] && ((major >= RELAY_MIN_NODE)); then
+      printf '%s' "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Never fails the ctl: the server is useful without the relay, so a missing node or missing
+# dependencies are reported and start goes on.
+start_relay() {
+  if alive "$RELAY_PIDFILE"; then
+    echo "relay: already running (pid $(cat "$RELAY_PIDFILE"))"
+    return 0
+  fi
+  local node
+  if ! node="$(relay_node)"; then
+    echo "relay: not started, no node >= $RELAY_MIN_NODE found (set RELAY_NODE=/path/to/node)" >&2
+    return 0
+  fi
+  if [[ ! -d "$DIR/relay/node_modules" ]]; then
+    echo "relay: not started, dependencies missing (run: cd $DIR/relay && npm install)" >&2
+    return 0
+  fi
+  mkdir -p "$DIR/run" "$DIR/logs"
+  cd "$DIR/relay"
+  # No wait for the relay (or the server) to answer: the ctl returns at once, well within the
+  # caller's time budget, and the relay's /health reports 503 until the server is up.
+  RELAY_HOST="$RELAY_HOST" RELAY_PORT="$RELAY_PORT" \
+    OMNIVOICE_URL="${OMNIVOICE_URL:-http://127.0.0.1:$PORT}" \
+    setsid nohup "$node" server.mjs >>"$RELAY_LOG" 2>&1 </dev/null &
+  echo $! >"$RELAY_PIDFILE"
+  echo "relay: started (pid $!, $node), log: $RELAY_LOG"
+}
+
+stop_relay() { stop_pid "$RELAY_PIDFILE" relay; }
+
+relay_status() {
+  if alive "$RELAY_PIDFILE"; then
+    if http_ok "http://127.0.0.1:$RELAY_PORT/health"; then
+      echo "relay: running (pid $(cat "$RELAY_PIDFILE")) on $RELAY_HOST:$RELAY_PORT, /health ok"
+    else
+      echo "relay: running (pid $(cat "$RELAY_PIDFILE")) on $RELAY_HOST:$RELAY_PORT, /health not ok (server down?)"
+    fi
+  else
+    echo "relay: not running"
+  fi
+}
+
+# Whether `tailscale serve` maps HTTPS 443 to the relay port (set once by hand:
+# `tailscale serve --bg <RELAY_PORT>`).
+serve_status() {
+  local json
+  if ! command -v tailscale >/dev/null 2>&1; then
+    echo "tailscale serve: tailscale not installed"
+    return 0
+  fi
+  if ! json="$(tailscale serve status --json 2>/dev/null)"; then
+    echo "tailscale serve: status unavailable (tailscaled not running?)"
+    return 0
+  fi
+  python3 - "$RELAY_PORT" "$json" <<'PY' || echo "tailscale serve: could not parse status"
+import json, sys
+port, raw = sys.argv[1], sys.argv[2]
+cfg = json.loads(raw or "{}") or {}
+target = f"127.0.0.1:{port}"
+found, other = None, []
+for hostport, web in (cfg.get("Web") or {}).items():
+    if not hostport.endswith(":443"):
+        continue
+    for path, h in (web.get("Handlers") or {}).items():
+        proxy = (h or {}).get("Proxy") or ""
+        bare = proxy.split("://", 1)[-1].rstrip("/")
+        if bare in (target, f"localhost:{port}"):
+            found = f"https://{hostport[:-4]}{path}"
+        elif proxy:
+            other.append(f"{path} -> {proxy}")
+if found:
+    print(f"tailscale serve: https 443 -> {target} ({found})")
+else:
+    extra = f"; 443 serves {', '.join(other)}" if other else ""
+    print(f"tailscale serve: https 443 does not map to {target} (run: tailscale serve --bg {port}){extra}")
+PY
+}
+
+# --- verbs ------------------------------------------------------------------------------------
+
+start() {
+  start_server
+  start_relay
 }
 
 stop() {
-  if ! pid_alive; then
-    rm -f "$PIDFILE"
-    echo "not running"
-    return 0
-  fi
-  local pid
-  pid="$(cat "$PIDFILE")"
-  kill "$pid"
-  for _ in $(seq 1 50); do
-    kill -0 "$pid" 2>/dev/null || break
-    sleep 0.2
-  done
-  kill -0 "$pid" 2>/dev/null && kill -9 "$pid"
-  rm -f "$PIDFILE"
-  echo "stopped (pid $pid)"
+  stop_relay
+  stop_server
 }
 
+# Exit code is the server's (0 healthy, 1 loading, 3 not running); relay and serve are reported.
 status() {
-  if pid_alive; then
-    if health; then
-      echo "running (pid $(cat "$PIDFILE")), healthy on 127.0.0.1:$PORT"
-    else
-      echo "running (pid $(cat "$PIDFILE")), not answering /health yet (model loading?)"
-      return 1
-    fi
-  else
-    echo "not running"
-    return 3
-  fi
+  local rc=0
+  server_status || rc=$?
+  relay_status
+  serve_status
+  return "$rc"
 }
 
 case "${1:-status}" in
@@ -78,5 +234,6 @@ case "${1:-status}" in
   restart) stop; start ;;
   status) status ;;
   log) tail -n 50 -f "$LOG" ;;
-  *) echo "usage: $0 start|stop|restart|status|log" >&2; exit 2 ;;
+  relay-log) tail -n 50 -f "$RELAY_LOG" ;;
+  *) echo "usage: $0 start|stop|restart|status|log|relay-log" >&2; exit 2 ;;
 esac

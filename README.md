@@ -32,7 +32,7 @@ workspace keeps) into this server's `voices-custom/` through `POST /v1/voices`.
 ## Run
 
 ```bash
-./omnivoicectl start|stop|restart|status|log
+./omnivoicectl start|stop|restart|status|log|relay-log
 .venv/bin/python smoke_test.py    # health, voices, every voice + format (needs a running server)
 .venv/bin/python -m pytest        # API tests, model mocked
 ```
@@ -48,6 +48,57 @@ command = /bin/sh -c "...; /path/to/omnivoice-server/omnivoicectl start >/dev/nu
 Env: `OMNIVOICE_HOST` (127.0.0.1), `OMNIVOICE_PORT` (8890), `OMNIVOICE_STEPS` (16),
 `OMNIVOICE_DEVICE` (cuda:0), `OMNIVOICE_DEFAULT_VOICE` (auto), `OMNIVOICE_VOICES_DIR` (voices),
 `OMNIVOICE_CUSTOM_DIR` (voices-custom). Relative dirs resolve against the repo root.
+
+`start` also starts the browser relay (next section) and `stop` stops both. If something already
+answers `/health` on `OMNIVOICE_PORT` without this ctl's pid file (another clone, a hand-started
+server), `start` leaves it alone instead of loading a second model. `status` exits with the
+server's state (0 healthy, 1 loading, 3 not running) and also prints the relay and `tailscale
+serve` state.
+
+## Browser relay over the tailnet
+
+`relay/` is a small Node process ([anytts](https://www.npmjs.com/package/anytts) `anytts/server`)
+that lets a browser on another device use this server: it speaks the anytts relay protocol
+(`POST /`), lists voices (`GET /voices`) and answers `GET /health` with `{"ok":true}` only while
+OmniVoice's own `/health` does. Browsers get CORS headers only for the origins in
+`RELAY_ALLOWED_ORIGINS`; any other origin gets a `403` on `POST`. There is no API key: it listens
+on loopback and is reachable from other devices only through `tailscale serve`, so only your
+tailnet can reach it.
+
+One-time setup (Node >= 22):
+
+```bash
+cd relay && npm install && cd ..
+tailscale serve --bg 8891     # HTTPS 443 on https://<host>.<tailnet>.ts.net -> 127.0.0.1:8891
+./omnivoicectl restart
+./omnivoicectl status         # server, relay, and whether serve maps 443 to the relay
+```
+
+`tailscale serve --bg 8891` replaces whatever `serve` mapped to HTTPS 443 before (check
+`tailscale serve status` first). The ctl only reports the mapping and never changes it.
+
+The relay runs detached with its pid in `run/relay.pid` and its log in `logs/relay.log`
+(`./omnivoicectl relay-log`). A missing node or a missing `relay/node_modules` is reported, and the
+server still starts. Env:
+
+| Variable                | Default                  | Notes                                                        |
+| ----------------------- | ------------------------ | ------------------------------------------------------------ |
+| `RELAY_HOST`            | `127.0.0.1`              | keep it on loopback; `tailscale serve` does the exposing      |
+| `RELAY_PORT`            | `8891`                   | the port `tailscale serve --bg` points at                     |
+| `OMNIVOICE_URL`         | `http://127.0.0.1:8890`  | the server (the ctl derives it from `OMNIVOICE_PORT`)         |
+| `RELAY_ALLOWED_ORIGINS` | `https://motyl.dev`      | comma list, e.g. `https://motyl.dev,http://localhost:3000`    |
+| `RELAY_NODE`            | `node` on the caller's `PATH`, else fnm's default alias | absolute path to a node >= 22; set it for the WSL boot command, whose `PATH` has no fnm |
+
+Set them in the environment of whatever calls the ctl (the WSL boot command, or the Pavilio panel,
+which runs `omnivoicectl start`/`stop` with its own start and stop when `PANEL_TTS_SERVER_CTL`
+points at it). `start` waits for neither process, so it returns at once.
+
+Check from the phone (on the tailnet): open `https://<host>.<tailnet>.ts.net/health` in its
+browser; `{"ok":true}` means relay and server are both up. From SPOCK itself:
+
+```bash
+curl -s -H 'Origin: https://motyl.dev' http://127.0.0.1:8891/health
+```
 
 ## Voices: bundled and custom
 
