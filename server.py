@@ -65,6 +65,8 @@ META_FIELDS = ("language", "locale", "gender", "label", "multilingual", "ref_tex
 VOICE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 LOCALE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
 GENDERS = ("male", "female", "neutral")
+RESERVED_NAMES = ("auto",)  # built-in voice ids that can never be saved, replaced or deleted
+FFMPEG_TIMEOUT_S = 120
 
 log = logging.getLogger("omnivoice")
 state: dict = {}
@@ -203,10 +205,14 @@ def voices() -> dict:
 
 def to_wav(src: Path, dst: Path) -> None:
     """Decode any ffmpeg-readable sample into 24 kHz mono 16-bit wav; 400 if it can't be decoded."""
-    proc = subprocess.run(
-        ["ffmpeg", "-loglevel", "error", "-y", "-i", str(src), "-ac", "1", "-ar", str(SR), "-c:a", "pcm_s16le", str(dst)],
-        capture_output=True,
-    )
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-loglevel", "error", "-y", "-i", str(src), "-ac", "1", "-ar", str(SR), "-c:a", "pcm_s16le", str(dst)],
+            capture_output=True,
+            timeout=FFMPEG_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(400, f"decoding the audio file timed out after {FFMPEG_TIMEOUT_S}s") from exc
     if proc.returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
         raise HTTPException(400, f"could not decode the audio file: {proc.stderr.decode(errors='replace')[:300]}")
 
@@ -224,6 +230,8 @@ async def create_voice(
     # Validate everything before touching the disk.
     if not VOICE_NAME.match(name):
         raise HTTPException(400, f"invalid voice name '{name}': use a-z, 0-9 and '-', 1-64 chars, not starting with '-'")
+    if name in RESERVED_NAMES:
+        raise HTTPException(400, f"'{name}' is a reserved name — pick another name")
     existing = state["voices"].get(name)
     if (existing is not None and existing.source == "bundled") or (voices_dir() / f"{name}.pt").exists():
         raise HTTPException(409, "bundled voice — pick another name")
@@ -257,7 +265,9 @@ async def create_voice(
         wav = tmp / f"{name}.wav"
         await asyncio.to_thread(to_wav, upload, wav)
 
-        async with gen_lock:  # the clone prompt runs on the same single GPU as generation
+        # The clone prompt runs on the same single GPU as generation; the lock also serialises the
+        # file writes and the state update, so concurrent writes for one name cannot interleave.
+        async with gen_lock:
             try:
                 prompt = await asyncio.to_thread(
                     state["model"].create_voice_clone_prompt, ref_audio=str(wav), ref_text=meta["ref_text"]
@@ -266,17 +276,17 @@ async def create_voice(
                 log.exception("clone prompt failed for '%s'", name)
                 raise HTTPException(400, f"voice cloning failed: {exc}") from exc
 
-        prompt.save(str(tmp / f"{name}.pt"))
-        (tmp / f"{name}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
-        # Everything is staged; only now replace the live files (wav, json, then pt last, because
-        # load_dir keys a voice on its .pt).
-        for ext in (".wav", ".json", ".pt"):
-            os.replace(tmp / f"{name}{ext}", target / f"{name}{ext}")
+            prompt.save(str(tmp / f"{name}.pt"))
+            (tmp / f"{name}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+            # Everything is staged; only now replace the live files (wav, json, then pt last, because
+            # load_dir keys a voice on its .pt).
+            for ext in (".wav", ".json", ".pt"):
+                os.replace(tmp / f"{name}{ext}", target / f"{name}{ext}")
+            voice = Voice(name, prompt, "custom", meta)
+            state["voices"][name] = voice
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    voice = Voice(name, prompt, "custom", meta)
-    state["voices"][name] = voice
     return JSONResponse(voice.record(), status_code=201)
 
 

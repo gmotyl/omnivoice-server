@@ -112,10 +112,15 @@ def test_refuses_a_bundled_name_with_409(voices_dir, custom_dir, make_client, m4
     [
         ({"name": "My Voice"}, None),
         ({"name": "-leading-dash"}, None),
+        ({"name": "auto"}, None),
         ({"ref_text": "   "}, None),
+        ({"locale": "pl_PL"}, None),
+        ({"gender": "robot"}, None),
+        ({"multilingual": "yes"}, None),
         ({}, b"this is definitely not audio"),
     ],
-    ids=["bad-name-case", "bad-name-dash", "blank-transcript", "undecodable-file"],
+    ids=["bad-name-case", "bad-name-dash", "reserved-name-auto", "blank-transcript", "bad-locale",
+         "bad-gender", "bad-multilingual", "undecodable-file"],
 )
 def test_rejects_a_bad_name_blank_transcript_undecodable_file(custom_dir, make_client, m4a_bytes, overrides, audio):
     client = make_client()
@@ -124,6 +129,7 @@ def test_rejects_a_bad_name_blank_transcript_undecodable_file(custom_dir, make_c
     assert res.json()["detail"]
     assert snapshot(custom_dir) == {}
     assert "my-voice" not in server.state["voices"]
+    assert "auto" not in server.state["voices"]
 
 
 def test_leaves_no_partial_files_when_cloning_fails(custom_dir, make_client, m4a_bytes):
@@ -143,3 +149,17 @@ def test_leaves_no_partial_files_when_cloning_fails(custom_dir, make_client, m4a
     assert res.status_code in (400, 500)
     assert snapshot(custom_dir) == before
     assert "other-voice" not in server.state["voices"]
+
+
+def test_gives_400_when_decoding_times_out(custom_dir, make_client, m4a_bytes, monkeypatch):
+    client = make_client()
+
+    def hang(*args, **kwargs):
+        assert kwargs.get("timeout") == server.FFMPEG_TIMEOUT_S
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(server.subprocess, "run", hang)
+    res = post_voice(client, m4a_bytes)
+    assert res.status_code == 400
+    assert "timed out" in res.json()["detail"]
+    assert snapshot(custom_dir) == {}
