@@ -5,6 +5,8 @@ Endpoints:
   GET  /v1/voices         saved voices + the built-in "auto" voice
   POST /v1/voices         multipart (file, name, ref_text, locale, gender, label, multilingual)
                           -> clones a custom voice into the custom dir, live without a restart
+  DELETE /v1/voices/{name}         removes a custom voice (bundled -> 403, "auto" -> 400)
+  GET  /v1/voices/{name}/sample   the voice's reference wav (audio/wav)
   GET  /health            model/device status
 
 Voices:
@@ -38,7 +40,7 @@ import numpy as np
 import soundfile as sf
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from omnivoice import OmniVoice, VoiceClonePrompt
 from pydantic import BaseModel, Field
 
@@ -288,6 +290,44 @@ async def create_voice(
         shutil.rmtree(tmp, ignore_errors=True)
 
     return JSONResponse(voice.record(), status_code=201)
+
+
+def known_voice(name: str) -> Voice:
+    """Look a voice up by name; 404 unless the name is valid and loaded. Callers build paths only
+    from the returned voice, so a crafted name never reaches the filesystem."""
+    voice = state["voices"].get(name) if VOICE_NAME.match(name) else None
+    if voice is None:
+        raise HTTPException(404, f"unknown voice '{name}'; see GET /v1/voices")
+    return voice
+
+
+def voice_dir(voice: Voice) -> Path:
+    return voices_dir() if voice.source == "bundled" else custom_dir()
+
+
+@app.delete("/v1/voices/{name}", status_code=204)
+async def delete_voice(name: str) -> Response:
+    if name in RESERVED_NAMES:
+        raise HTTPException(400, f"'{name}' is built in and can't be deleted")
+    voice = known_voice(name)
+    if voice.source == "bundled":
+        raise HTTPException(403, "bundled voice — can't be deleted")
+    async with gen_lock:  # serialise with POST /v1/voices writes for the same name
+        target = custom_dir()
+        # .pt first: load_dir keys a voice on it, so a half-done delete never leaves a live voice.
+        for ext in (".pt", ".json", ".wav"):
+            (target / f"{voice.name}{ext}").unlink(missing_ok=True)
+        state["voices"].pop(voice.name, None)
+    return Response(status_code=204)
+
+
+@app.get("/v1/voices/{name}/sample")
+def voice_sample(name: str) -> FileResponse:
+    voice = known_voice(name)
+    wav = voice_dir(voice) / f"{voice.name}.wav"
+    if not wav.is_file():
+        raise HTTPException(404, f"voice '{name}' has no reference sample")
+    return FileResponse(wav, media_type="audio/wav")
 
 
 @app.get("/health")
