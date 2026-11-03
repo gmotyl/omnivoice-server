@@ -1,1 +1,9 @@
-{"language": "pl", "description": "bootstrapped from design 'female, young adult' (seed 0)"}
+{
+  "language": "pl",
+  "description": "bootstrapped from design 'female, young adult' (seed 0)",
+  "locale": "pl-PL",
+  "gender": "female",
+  "label": "Polish, young (spike)",
+  "multilingual": false,
+  "ref_text": "Dzień dobry. Będę dzisiaj czytać na głos odpowiedzi z panelu, spokojnie i wyraźnie."
+}

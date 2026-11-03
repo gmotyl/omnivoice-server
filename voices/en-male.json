@@ -1,1 +1,9 @@
-{"language": "en", "description": "bootstrapped from design 'male, middle-aged, low pitch, american accent' (seed 0)"}
+{
+  "language": "en",
+  "description": "bootstrapped from design 'male, middle-aged, low pitch, american accent' (seed 0)",
+  "locale": "en-US",
+  "gender": "male",
+  "label": "American, middle-aged, low (spike)",
+  "multilingual": false,
+  "ref_text": "Good morning. I will be reading the answers from the panel out loud for you today."
+}

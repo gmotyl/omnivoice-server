@@ -1,0 +1,9 @@
+{
+  "language": "en",
+  "description": "cloned from mimba voicebank speaker male_elderly_veryhigh_normal_british (CC-BY-NC-SA-4.0)",
+  "locale": "en-GB",
+  "gender": "male",
+  "label": "British, male, elderly, very high pitch, normal (voice bank)",
+  "multilingual": true,
+  "ref_text": "This text-to-speech system runs entirely in your browser, providing fast and private operation without sending any data to external servers."
+}
