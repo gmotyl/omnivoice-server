@@ -6,3 +6,4 @@ run/
 logs/
 voices-custom/
 relay/node_modules/
+relay.env

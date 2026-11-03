@@ -21,16 +21,75 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 export HF_HOME="${HF_HOME:-/root/.cache/huggingface}"
 # Model is cached; don't let a boot without network block on a hub lookup.
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+
+# Optional, gitignored $DIR/relay.env: KEY=VALUE lines (blank lines and # comments skipped,
+# one pair of surrounding quotes stripped) for the relay and this ctl, so RELAY_ALLOWED_ORIGINS
+# etc. apply however the ctl is called (the Pavilio panel and the WSL boot command source no
+# secrets). Parsed, never executed. A variable already in the environment wins over the file.
+RELAY_ENV_FILE="$DIR/relay.env"
+RELAY_ENV_LOADED=()
+load_relay_env() {
+  local line key value
+  [[ -f "$RELAY_ENV_FILE" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+    if [[ ! "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      echo "relay.env: skipped a line that is not KEY=VALUE" >&2
+      continue
+    fi
+    key="${BASH_REMATCH[2]}"
+    value="${BASH_REMATCH[3]}"
+    if [[ "$value" =~ ^\"(.*)\"$ || "$value" =~ ^\'(.*)\'$ ]]; then value="${BASH_REMATCH[1]}"; fi
+    [[ -n "${!key+x}" ]] && continue
+    export "$key=$value"
+    RELAY_ENV_LOADED+=("$key")
+  done <"$RELAY_ENV_FILE"
+}
+load_relay_env
+
 PORT="${OMNIVOICE_PORT:-8890}"
 RELAY_PORT="${RELAY_PORT:-8891}"
 RELAY_HOST="${RELAY_HOST:-127.0.0.1}"
+RELAY_SERVE_HTTPS_PORT="${RELAY_SERVE_HTTPS_PORT:-8443}"
 RELAY_MIN_NODE=22
 
-alive() { # alive <pidfile>
-  [[ -f "$1" ]] && kill -0 "$(cat "$1")" 2>/dev/null
+# ours <pid> <script> <cwd>: the pid is a live process running <script> from <cwd> (the ctl
+# starts the server from $DIR and the relay from $DIR/relay). Anything else (a reused pid, a
+# sibling clone's process) is not ours and is never signalled.
+ours() {
+  local pid="$1" script="$2" cwd="$3" cmd
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)" || return 1
+  [[ " $cmd" == *[/\ ]"$script "* ]] || return 1
+  [[ "$(readlink "/proc/$pid/cwd" 2>/dev/null)" == "$cwd" ]]
 }
 
-pid_alive() { alive "$PIDFILE"; }
+# alive <pidfile> <script> <cwd>: the pid file names a process of ours. A pid file that names
+# anything else is stale and removed.
+alive() {
+  local pidfile="$1" pid
+  [[ -f "$pidfile" ]] || return 1
+  pid="$(cat "$pidfile" 2>/dev/null || true)"
+  if ours "$pid" "$2" "$3"; then return 0; fi
+  rm -f "$pidfile"
+  echo "$(basename "$pidfile"): stale (pid ${pid:-?} is not this ctl's $2), removed" >&2
+  return 1
+}
+
+pid_alive() { alive "$PIDFILE" server.py "$DIR"; }
+relay_alive() { alive "$RELAY_PIDFILE" server.mjs "$DIR/relay"; }
+
+# Relays of this DIR that run without (or with a stale) pid file, e.g. after run/ was wiped.
+relay_orphans() {
+  local p pid
+  for p in /proc/[0-9]*; do
+    pid="${p#/proc/}"
+    ours "$pid" server.mjs "$DIR/relay" && printf '%s\n' "$pid"
+  done
+  return 0
+}
 
 http_ok() { # http_ok <url>: 0 when the URL answers 2xx within 2 s
   python3 - "$1" <<'PY' 2>/dev/null
@@ -41,22 +100,27 @@ PY
 
 health() { http_ok "http://127.0.0.1:$PORT/health"; }
 
-stop_pid() { # stop_pid <pidfile> <name>: TERM, up to 10 s, then KILL
-  local pidfile="$1" name="$2" pid
-  if ! alive "$pidfile"; then
-    rm -f "$pidfile"
-    echo "$name: not running"
-    return 0
-  fi
-  pid="$(cat "$pidfile")"
+kill_ours() { # kill_ours <pid> <script> <cwd>: TERM, up to 10 s, then KILL; only while ours
+  local pid="$1"
+  ours "$@" || return 0
   kill "$pid" 2>/dev/null || true
   for _ in $(seq 1 50); do
-    kill -0 "$pid" 2>/dev/null || break
+    ours "$@" || return 0
     sleep 0.2
   done
-  if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid" 2>/dev/null || true; fi
-  rm -f "$pidfile"
-  echo "$name: stopped (pid $pid)"
+  if ours "$@"; then kill -9 "$pid" 2>/dev/null || true; fi
+}
+
+stop_server() {
+  local pid
+  if ! pid_alive; then
+    echo "server: not running"
+    return 0
+  fi
+  pid="$(cat "$PIDFILE")"
+  kill_ours "$pid" server.py "$DIR"
+  rm -f "$PIDFILE"
+  echo "server: stopped (pid $pid)"
 }
 
 # --- server -----------------------------------------------------------------------------------
@@ -79,8 +143,6 @@ start_server() {
   echo $! >"$PIDFILE"
   echo "server: started (pid $!), log: $LOG"
 }
-
-stop_server() { stop_pid "$PIDFILE" server; }
 
 server_status() {
   if pid_alive; then
@@ -133,11 +195,16 @@ relay_node() {
 # Never fails the ctl: the server is useful without the relay, so a missing node or missing
 # dependencies are reported and start goes on.
 start_relay() {
-  if alive "$RELAY_PIDFILE"; then
+  local orphans node
+  if relay_alive; then
     echo "relay: already running (pid $(cat "$RELAY_PIDFILE"))"
     return 0
   fi
-  local node
+  orphans="$(relay_orphans)"
+  if [[ -n "$orphans" ]]; then
+    echo "relay: already running without a pid file (pid $(echo $orphans)), not starting another (run: $0 stop)"
+    return 0
+  fi
   if ! node="$(relay_node)"; then
     echo "relay: not started, no node >= $RELAY_MIN_NODE found (set RELAY_NODE=/path/to/node)" >&2
     return 0
@@ -155,24 +222,59 @@ start_relay() {
     setsid nohup "$node" server.mjs >>"$RELAY_LOG" 2>&1 </dev/null &
   echo $! >"$RELAY_PIDFILE"
   echo "relay: started (pid $!, $node), log: $RELAY_LOG"
-}
-
-stop_relay() { stop_pid "$RELAY_PIDFILE" relay; }
-
-relay_status() {
-  if alive "$RELAY_PIDFILE"; then
-    if http_ok "http://127.0.0.1:$RELAY_PORT/health"; then
-      echo "relay: running (pid $(cat "$RELAY_PIDFILE")) on $RELAY_HOST:$RELAY_PORT, /health ok"
-    else
-      echo "relay: running (pid $(cat "$RELAY_PIDFILE")) on $RELAY_HOST:$RELAY_PORT, /health not ok (server down?)"
-    fi
-  else
-    echo "relay: not running"
+  if ((${#RELAY_ENV_LOADED[@]})); then
+    echo "relay: env from $RELAY_ENV_FILE: ${RELAY_ENV_LOADED[*]}"
   fi
 }
 
-# Whether `tailscale serve` maps HTTPS 443 to the relay port (set once by hand:
-# `tailscale serve --bg <RELAY_PORT>`).
+# Stops the pid file's relay and any relay of this DIR running without one, so none is orphaned.
+stop_relay() {
+  local pids=() pid
+  if relay_alive; then pids+=("$(cat "$RELAY_PIDFILE")"); fi
+  for pid in $(relay_orphans); do
+    [[ " ${pids[*]} " == *" $pid "* ]] || pids+=("$pid")
+  done
+  rm -f "$RELAY_PIDFILE"
+  if ((${#pids[@]} == 0)); then
+    echo "relay: not running"
+    return 0
+  fi
+  for pid in "${pids[@]}"; do kill_ours "$pid" server.mjs "$DIR/relay"; done
+  echo "relay: stopped (pid ${pids[*]})"
+}
+
+# The address to probe the relay on: its bind address, or loopback when it binds every interface.
+relay_probe_host() {
+  case "$RELAY_HOST" in
+    "" | 0.0.0.0 | :: | "[::]") printf '127.0.0.1' ;;
+    *:*) local h="${RELAY_HOST#[}"; printf '[%s]' "${h%]}" ;;
+    *) printf '%s' "$RELAY_HOST" ;;
+  esac
+}
+
+relay_status() {
+  local pid orphans url
+  url="http://$(relay_probe_host):$RELAY_PORT/health"
+  if relay_alive; then
+    pid="$(cat "$RELAY_PIDFILE")"
+  else
+    orphans="$(relay_orphans)"
+    if [[ -z "$orphans" ]]; then
+      echo "relay: not running"
+      return 0
+    fi
+    pid="$(echo $orphans) (no pid file; $0 stop stops it)"
+  fi
+  if http_ok "$url"; then
+    echo "relay: running (pid $pid) on $RELAY_HOST:$RELAY_PORT, /health ok"
+  else
+    echo "relay: running (pid $pid) on $RELAY_HOST:$RELAY_PORT, /health not ok at $url (server down?)"
+  fi
+}
+
+# Whether `tailscale serve` maps HTTPS $RELAY_SERVE_HTTPS_PORT to the relay port (set once by
+# hand: `tailscale serve --bg --https=<RELAY_SERVE_HTTPS_PORT> <RELAY_PORT>`). Not 443: on SPOCK
+# HTTPS 443 already serves the Pavilio panel.
 serve_status() {
   local json
   if ! command -v tailscale >/dev/null 2>&1; then
@@ -183,27 +285,28 @@ serve_status() {
     echo "tailscale serve: status unavailable (tailscaled not running?)"
     return 0
   fi
-  python3 - "$RELAY_PORT" "$json" <<'PY' || echo "tailscale serve: could not parse status"
+  python3 - "$RELAY_PORT" "$RELAY_SERVE_HTTPS_PORT" "$json" <<'PY' || echo "tailscale serve: could not parse status"
 import json, sys
-port, raw = sys.argv[1], sys.argv[2]
+port, https, raw = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = json.loads(raw or "{}") or {}
 target = f"127.0.0.1:{port}"
+suffix = f":{https}"
 found, other = None, []
 for hostport, web in (cfg.get("Web") or {}).items():
-    if not hostport.endswith(":443"):
+    if not hostport.endswith(suffix):
         continue
     for path, h in (web.get("Handlers") or {}).items():
         proxy = (h or {}).get("Proxy") or ""
         bare = proxy.split("://", 1)[-1].rstrip("/")
         if bare in (target, f"localhost:{port}"):
-            found = f"https://{hostport[:-4]}{path}"
+            found = f"https://{hostport}{path}"
         elif proxy:
             other.append(f"{path} -> {proxy}")
 if found:
-    print(f"tailscale serve: https 443 -> {target} ({found})")
+    print(f"tailscale serve: https {https} -> {target} ({found})")
 else:
-    extra = f"; 443 serves {', '.join(other)}" if other else ""
-    print(f"tailscale serve: https 443 does not map to {target} (run: tailscale serve --bg {port}){extra}")
+    extra = f"; {https} serves {', '.join(other)}" if other else ""
+    print(f"tailscale serve: https {https} does not map to {target} (run: tailscale serve --bg --https={https} {port}){extra}")
 PY
 }
 

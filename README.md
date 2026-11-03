@@ -69,17 +69,25 @@ One-time setup (Node >= 22):
 
 ```bash
 cd relay && npm install && cd ..
-tailscale serve --bg 8891     # HTTPS 443 on https://<host>.<tailnet>.ts.net -> 127.0.0.1:8891
+cp relay.env.example relay.env               # then edit RELAY_ALLOWED_ORIGINS
+tailscale serve status                       # see what is already served
+tailscale serve --bg --https=8443 8891       # https://<host>.<tailnet>.ts.net:8443 -> 127.0.0.1:8891
 ./omnivoicectl restart
-./omnivoicectl status         # server, relay, and whether serve maps 443 to the relay
+./omnivoicectl status         # server, relay, and whether serve maps 8443 to the relay
 ```
 
-`tailscale serve --bg 8891` replaces whatever `serve` mapped to HTTPS 443 before (check
-`tailscale serve status` first). The ctl only reports the mapping and never changes it.
+> **Do not use `--https=443` (or a bare `tailscale serve --bg 8891`, which means 443) on SPOCK.**
+> HTTPS 443 there already serves the Pavilio panel (`/ -> http://127.0.0.1:3010`); mapping 443 to
+> the relay would replace the panel's mapping. Use a free port such as 8443 and set
+> `RELAY_SERVE_HTTPS_PORT` if you pick another one. The ctl only reports the mapping and never
+> changes it.
 
 The relay runs detached with its pid in `run/relay.pid` and its log in `logs/relay.log`
 (`./omnivoicectl relay-log`). A missing node or a missing `relay/node_modules` is reported, and the
-server still starts. Env:
+server still starts. The ctl treats a pid file as its own only while that pid runs `server.py`
+(server, from the repo root) or `server.mjs` (relay, from `relay/`); any other pid file is stale and
+removed, so `stop` never signals an unrelated process. `stop` also stops a relay of this checkout
+that runs without a pid file, and `status` reports one. Env:
 
 | Variable                | Default                  | Notes                                                        |
 | ----------------------- | ------------------------ | ------------------------------------------------------------ |
@@ -88,12 +96,21 @@ server still starts. Env:
 | `OMNIVOICE_URL`         | `http://127.0.0.1:8890`  | the server (the ctl derives it from `OMNIVOICE_PORT`)         |
 | `RELAY_ALLOWED_ORIGINS` | `https://motyl.dev`      | comma list, e.g. `https://motyl.dev,http://localhost:3000`    |
 | `RELAY_NODE`            | `node` on the caller's `PATH`, else fnm's default alias | absolute path to a node >= 22; set it for the WSL boot command, whose `PATH` has no fnm |
+| `RELAY_SERVE_HTTPS_PORT` | `8443`                  | the tailnet HTTPS port `status` expects `tailscale serve` to map to the relay |
 
-Set them in the environment of whatever calls the ctl (the WSL boot command, or the Pavilio panel,
-which runs `omnivoicectl start`/`stop` with its own start and stop when `PANEL_TTS_SERVER_CTL`
-points at it). `start` waits for neither process, so it returns at once.
+Put them in `relay.env` next to `omnivoicectl` (gitignored; start from the committed
+`relay.env.example`). The ctl reads it on every call, so the settings apply however it is started:
+the WSL boot command, a terminal, or the Pavilio panel, which runs `omnivoicectl start`/`stop` with
+its own start and stop when `PANEL_TTS_SERVER_CTL` points at it and does not pass on
+`~/.panel/secrets.env`. The file holds `KEY=VALUE` lines (blank lines and `#` comments skipped,
+surrounding quotes stripped); it is parsed, not executed. A variable already set in the calling
+environment wins over the file. `start` waits for neither process, so it returns at once.
 
-Check from the phone (on the tailnet): open `https://<host>.<tailnet>.ts.net/health` in its
+Browsers on a public page (`https://motyl.dev`) reaching a tailnet host send a Private Network
+Access preflight; the relay answers it with `Access-Control-Allow-Private-Network: true` for an
+allowed origin.
+
+Check from the phone (on the tailnet): open `https://<host>.<tailnet>.ts.net:8443/health` in its
 browser; `{"ok":true}` means relay and server are both up. From SPOCK itself:
 
 ```bash
