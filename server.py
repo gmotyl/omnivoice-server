@@ -6,12 +6,14 @@ Endpoints:
   GET  /health            model/device status
 
 Voices:
-  - "<name>"              a saved clone prompt: voices/<name>.pt (+ voices/<name>.json with language)
+  - "<name>"              a saved clone prompt: <dir>/<name>.pt (+ <dir>/<name>.json voice record)
+                          from the bundled dir (voices/, tracked) or the custom dir (voices-custom/)
   - "auto"                model picks a voice (varies per call)
   - "design:<attrs>"      voice design, e.g. "design:female, low pitch" (stable for en/zh only)
 
 Env: OMNIVOICE_HOST (127.0.0.1), OMNIVOICE_PORT (8890), OMNIVOICE_STEPS (16),
-     OMNIVOICE_DEVICE (cuda:0), OMNIVOICE_DEFAULT_VOICE (auto)
+     OMNIVOICE_DEVICE (cuda:0), OMNIVOICE_DEFAULT_VOICE (auto),
+     OMNIVOICE_VOICES_DIR (voices), OMNIVOICE_CUSTOM_DIR (voices-custom); relative to this file
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 import os
 import subprocess
 import time
@@ -36,7 +39,6 @@ from pydantic import BaseModel, Field
 
 SR = 24000
 ROOT = Path(__file__).parent
-VOICES_DIR = ROOT / "voices"
 HOST = os.environ.get("OMNIVOICE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("OMNIVOICE_PORT", "8890"))
 STEPS = int(os.environ.get("OMNIVOICE_STEPS", "16"))
@@ -52,21 +54,60 @@ MEDIA_TYPES = {
     "aac": "audio/aac",
 }
 
+# Voice record metadata fields beyond id/source; a legacy .json may lack any of them (-> None).
+META_FIELDS = ("language", "locale", "gender", "label", "multilingual", "ref_text", "description")
+
+log = logging.getLogger("omnivoice")
 state: dict = {}
 gen_lock = asyncio.Lock()  # one generation at a time on the single GPU
 
 
+def _env_dir(var: str, default: str) -> Path:
+    path = Path(os.environ.get(var, default))
+    return path if path.is_absolute() else ROOT / path
+
+
+def voices_dir() -> Path:
+    """Bundled voices: tracked in git, read-only for the API."""
+    return _env_dir("OMNIVOICE_VOICES_DIR", "voices")
+
+
+def custom_dir() -> Path:
+    """Custom voices: gitignored, the only dir POST/DELETE write to. May not exist."""
+    return _env_dir("OMNIVOICE_CUSTOM_DIR", "voices-custom")
+
+
 class Voice:
-    def __init__(self, name: str, prompt: VoiceClonePrompt, language: str | None, description: str):
-        self.name, self.prompt, self.language, self.description = name, prompt, language, description
+    def __init__(self, name: str, prompt: VoiceClonePrompt, source: str, meta: dict):
+        self.name, self.prompt, self.source = name, prompt, source
+        self.meta = {field: meta.get(field) for field in META_FIELDS}
+
+    @property
+    def language(self) -> str | None:
+        return self.meta["language"]
+
+    def record(self) -> dict:
+        return {"id": self.name, "source": self.source, **self.meta}
+
+
+def load_dir(directory: Path, source: str) -> dict[str, Voice]:
+    voices: dict[str, Voice] = {}
+    if not directory.is_dir():
+        return voices
+    for pt in sorted(directory.glob("*.pt")):
+        meta_path = pt.with_suffix(".json")
+        meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+        voices[pt.stem] = Voice(pt.stem, VoiceClonePrompt.load(str(pt)), source, meta)
+    return voices
 
 
 def load_voices() -> dict[str, Voice]:
-    voices: dict[str, Voice] = {}
-    for pt in sorted(VOICES_DIR.glob("*.pt")):
-        meta_path = pt.with_suffix(".json")
-        meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
-        voices[pt.stem] = Voice(pt.stem, VoiceClonePrompt.load(str(pt)), meta.get("language"), meta.get("description", ""))
+    voices = load_dir(voices_dir(), "bundled")
+    for name, voice in load_dir(custom_dir(), "custom").items():
+        if name in voices:
+            log.warning("custom voice '%s' clashes with a bundled voice; the bundled one wins", name)
+            continue
+        voices[name] = voice
     return voices
 
 
@@ -147,8 +188,8 @@ async def speech(req: SpeechRequest) -> Response:
 
 @app.get("/v1/voices")
 def voices() -> dict:
-    saved = [{"id": v.name, "language": v.language, "description": v.description} for v in state["voices"].values()]
-    return {"default": DEFAULT_VOICE, "voices": [{"id": "auto", "language": None, "description": "model-chosen, varies per call"}, *saved]}
+    auto = {"id": "auto", "source": None, **{f: None for f in META_FIELDS}, "description": "model-chosen, varies per call"}
+    return {"default": DEFAULT_VOICE, "voices": [auto, *(v.record() for v in state["voices"].values())]}
 
 
 @app.get("/health")
