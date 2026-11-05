@@ -91,7 +91,7 @@ def normalize(text: str, language: str) -> str: ...
 
 - [x] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
 - [x] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -am "feat(normalize): percentages, units, abbreviations"`
+- [x] **Step 3: Commit** — `git commit -am "feat(normalize): percentages, units, abbreviations"`
 
 ### Task 4: Dates and money
 
@@ -123,9 +123,9 @@ def normalize(text: str, language: str) -> str: ...
 - "test_money_local_table_en"
 - "test_money_range"
 
-- [ ] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -am "feat(normalize): dates and money"`
+- [x] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -am "feat(normalize): dates and money"`
 
 ### Task 5: Acronyms
 
@@ -147,8 +147,8 @@ def normalize(text: str, language: str) -> str: ...
 - "test_read_as_word_acronyms_unchanged"
 - "test_mixed_case_and_single_capital_unchanged"
 
-- [ ] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
+- [x] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
 - [ ] **Step 3: Commit** — `git commit -am "feat(normalize): acronyms"`
 
 ### Task 6: Wire into the server with a switch
