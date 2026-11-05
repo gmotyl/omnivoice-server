@@ -50,6 +50,8 @@ _TRAILING_PUNCT = ".,;:!?)]}\"'»”"
 # A file path: optional root (/, ./, ../, ~/), then segments joined by slashes.
 _PATH = re.compile(r"(?:~|\.{1,2})?/?[\w.-]+(?:/[\w.-]+)+/?")
 _FILE_EXT = re.compile(r"\.[A-Za-z][A-Za-z0-9]{0,5}$")
+# A bare file name with no slash (`report.2026.txt`): dot-joined segments ending in an extension.
+_BARE_FILE = re.compile(r"[\w-]+(?:\.[\w-]+)*\.[A-Za-z][A-Za-z0-9]{0,5}")
 # Digits touching a letter or an underscore (mp3, x86_64, v1.2.3), or a KEY=value assignment.
 _LETTER = r"(?:[^\W\d]|_)"
 _DIGIT_TOUCHES_LETTER = re.compile(rf"{_LETTER}\d|\d{_LETTER}")
@@ -67,6 +69,14 @@ def _placeholder(index: int) -> str:
 
 
 def _is_path(core: str) -> bool:
+    if "/" not in core:
+        # Only a bare file name with a digit needs masking, and only when a letter comes before
+        # its extension: `e.g.` (no digit) and a glued `2026.Tak` (no letter) stay prose.
+        return bool(
+            _BARE_FILE.fullmatch(core)
+            and re.search(r"[0-9]", core)
+            and re.search(r"[^\W\d_]", _FILE_EXT.sub("", core))
+        )
     if not _PATH.fullmatch(core) or not re.search(r"[^\W\d_]", core):
         return False
     rooted = core.startswith(("/", "./", "../", "~/"))

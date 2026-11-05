@@ -15,6 +15,11 @@ PROTECTED = [
     "v1.2.3",
     "x86_64",
     "mp3",
+    "./report.2026.txt",
+    "notes.2026.md",
+    "~/notes2026.md",
+    "../a1.txt",
+    "/var/log/2026",
 ]
 
 
@@ -50,7 +55,8 @@ def test_locale_reduced_to_base_code(monkeypatch):
 def test_protected_spans_untouched(monkeypatch, language):
     sentence = (
         "Start [laughter] then [B EY1 S], see https://a.b/c1, open src/a1/b.py; "
-        "set OMNIVOICE_STEPS=16 on v1.2.3 (x86_64) and play mp3."
+        "set OMNIVOICE_STEPS=16 on v1.2.3 (x86_64) and play mp3. "
+        "Keep ./report.2026.txt, notes.2026.md, ~/notes2026.md, ../a1.txt and /var/log/2026."
     )
     # With the real passes, whatever they are by now.
     out = normalize(sentence, language)
@@ -62,6 +68,15 @@ def test_protected_spans_untouched(monkeypatch, language):
     for span in PROTECTED:
         assert span in out
     assert out.startswith("start ")  # the dummy pass did run on the unprotected text
+
+
+@pytest.mark.parametrize(
+    "text", ["5.11.2026", "05.11.2026.", "1.2", "1,2", "e.g.", "U.S.", "2026.Tak", "(1.5)"]
+)
+def test_prose_numbers_and_abbreviations_not_masked(text):
+    masked, spans = nm._mask(text)
+    assert spans == []
+    assert masked == text
 
 
 def test_failing_pass_is_skipped_and_logged(monkeypatch, caplog):
