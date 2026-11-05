@@ -47,13 +47,31 @@ command = /bin/sh -c "...; /path/to/omnivoice-server/omnivoicectl start >/dev/nu
 
 Env: `OMNIVOICE_HOST` (127.0.0.1), `OMNIVOICE_PORT` (8890), `OMNIVOICE_STEPS` (16),
 `OMNIVOICE_DEVICE` (cuda:0), `OMNIVOICE_DEFAULT_VOICE` (auto), `OMNIVOICE_VOICES_DIR` (voices),
-`OMNIVOICE_CUSTOM_DIR` (voices-custom). Relative dirs resolve against the repo root.
+`OMNIVOICE_CUSTOM_DIR` (voices-custom), `OMNIVOICE_NORMALIZE` (on; `0`, `false` or `off` turns
+[text normalisation](#text-normalisation) off). Relative dirs resolve against the repo root.
 
 `start` also starts the browser relay (next section) and `stop` stops both. If something already
 answers `/health` on `OMNIVOICE_PORT` without this ctl's pid file (another clone, a hand-started
 server), `start` leaves it alone instead of loading a second model. `status` exits with the
 server's state (0 healthy, 1 loading, 3 not running) and also prints the relay and `tailscale
 serve` state.
+
+## Text normalisation
+
+Before synthesis, `POST /v1/audio/speech` rewrites numbers, decimals, ranges, percentages, units,
+dates, money and abbreviations into spoken words (`12,5%` → "dwanaście przecinek pięć procent"),
+so the model says them and its duration estimate matches what is said. All-caps acronyms (`API`,
+`GPU`) are left as written: OmniVoice pronounces them correctly by itself.
+
+- **Scope:** `pl` and `en` only; any other language passes through unchanged. A locale such as
+  `pl-PL` is reduced to `pl`.
+- **Language:** the request's `language`, else the voice's.
+- **Untouched:** bracket tags (`[laughter]`), URLs, paths and identifiers (`OMNIVOICE_STEPS=16`,
+  `v1.2.3`).
+- **Switch:** on by default; `OMNIVOICE_NORMALIZE=0|false|off` turns it off. It is read at startup,
+  so restart the server to change it.
+
+Design: [openspec/changes/text-normalisation/design.md](openspec/changes/text-normalisation/design.md).
 
 ## Browser relay over the tailnet
 

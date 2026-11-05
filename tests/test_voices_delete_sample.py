@@ -1,5 +1,6 @@
-import server
 from conftest import write_voice
+
+import server
 
 
 def listed_ids(client) -> list[str]:

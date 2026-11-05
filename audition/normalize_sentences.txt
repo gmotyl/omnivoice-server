@@ -1,0 +1,15 @@
+# Normalisation A/B verification sentences: <lang><TAB><sentence>. Blank lines and # comments skipped.
+# Rendered by audition/normalize_ab.py on krystyna1 (pl) and en-male (en), normalisation off and on.
+pl	Generowanie zajmie ok. 1,2–1,6 s na zdanie.
+pl	W magazynie zostało 1250 sztuk, czyli 37,5% zapasu.
+pl	Spotkanie przełożono na 12.03.2026 r., a termin minie 2026-04-01.
+pl	Bilet kosztuje 49,99 zł, a w Berlinie €12.
+pl	Serwer ma 32 GB RAM, a odpowiedź z API przychodzi po 120 ms.
+pl	Temperatura spadła do -5 °C, a wiatr wiał 60 km/h, tj. ok. 3–4 razy mocniej.
+pl	Wersję opisuje plik `config.json` oraz adres https://example.com/v2.
+en	Generation takes approx. 1.2–1.6 s per sentence.
+en	We shipped 1,250 units, roughly 37.5% of the stock.
+en	The meeting moved to 2026-03-12, the deadline is 5 Jan 2027.
+en	A ticket costs $49.99 here and 45 € in Berlin.
+en	The server has 32 GB of RAM and the API answers in 120 ms.
+en	Dr. Smith sent the NASA report on 3–4 pages, see `src/normalize.py`.

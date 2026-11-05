@@ -29,7 +29,7 @@ for _ in range(150):
     try:
         print("health", get("/health"))
         break
-    except Exception:
+    except Exception:  # noqa: BLE001 - server not up yet; retry
         time.sleep(2)
 else:
     sys.exit("server did not come up")

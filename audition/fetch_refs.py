@@ -12,7 +12,6 @@ Sources (both CC-BY 4.0, read through the Hugging Face datasets-server API, no f
 Writes audition/refs/<id>.wav (24 kHz mono) + audition/refs/<id>.json (ref_text + metadata).
 """
 
-import io
 import json
 import subprocess
 import time
@@ -76,7 +75,7 @@ def save(vid: str, audio: np.ndarray, meta: dict) -> None:
 
 
 def vctk() -> None:
-    ds = dict(dataset="sanchit-gandhi/vctk", config="default", split="train")
+    ds = {"dataset": "sanchit-gandhi/vctk", "config": "default", "split": "train"}
     total_rows = get("size", dataset=ds["dataset"])["size"]["dataset"]["num_rows"]
     want = dict(VCTK_PER_GROUP)
     seen = set()
@@ -127,7 +126,7 @@ def vctk() -> None:
 def mls_polish() -> None:
     best: dict[str, dict] = {}
     for split in ("9_hours", "dev", "test"):
-        ds = dict(dataset="facebook/multilingual_librispeech", config="polish", split=split)
+        ds = {"dataset": "facebook/multilingual_librispeech", "config": "polish", "split": split}
         n = get("rows", offset=0, length=1, **ds)["num_rows_total"]
         for offset in range(0, n, 100):
             for r in get("rows", offset=offset, length=100, **ds)["rows"]:

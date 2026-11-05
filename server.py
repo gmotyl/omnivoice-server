@@ -18,6 +18,7 @@ Voices:
 Env: OMNIVOICE_HOST (127.0.0.1), OMNIVOICE_PORT (8890), OMNIVOICE_STEPS (16),
      OMNIVOICE_DEVICE (cuda:0), OMNIVOICE_DEFAULT_VOICE (auto),
      OMNIVOICE_VOICES_DIR (voices), OMNIVOICE_CUSTOM_DIR (voices-custom); relative to this file
+     OMNIVOICE_NORMALIZE (on): spell out numbers/units for pl/en before synthesis; 0/false/off disable
 """
 
 from __future__ import annotations
@@ -44,6 +45,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from omnivoice import OmniVoice, VoiceClonePrompt
 from pydantic import BaseModel, Field
 
+from normalize import normalize
+
 SR = 24000
 ROOT = Path(__file__).parent
 HOST = os.environ.get("OMNIVOICE_HOST", "127.0.0.1")
@@ -51,6 +54,14 @@ PORT = int(os.environ.get("OMNIVOICE_PORT", "8890"))
 STEPS = int(os.environ.get("OMNIVOICE_STEPS", "16"))
 DEVICE = os.environ.get("OMNIVOICE_DEVICE", "cuda:0")
 DEFAULT_VOICE = os.environ.get("OMNIVOICE_DEFAULT_VOICE", "auto")
+
+
+def _env_flag(var: str) -> bool:
+    """A default-on switch: only 0, false or off (any case) turn it off."""
+    return os.environ.get(var, "").strip().lower() not in ("0", "false", "off")
+
+
+NORMALIZE_ENABLED = _env_flag("OMNIVOICE_NORMALIZE")  # read once at import
 
 MEDIA_TYPES = {
     "wav": "audio/wav",
@@ -159,7 +170,7 @@ def encode(audio: np.ndarray, fmt: str) -> bytes:
         return buf.getvalue()
     codec = {"mp3": ["-f", "mp3", "-b:a", "128k"], "opus": ["-f", "ogg", "-c:a", "libopus"], "aac": ["-f", "adts"]}[fmt]
     wav = encode(audio, "wav")
-    proc = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", "pipe:0", *codec, "pipe:1"], input=wav, capture_output=True)
+    proc = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", "pipe:0", *codec, "pipe:1"], input=wav, capture_output=True, check=False)
     if proc.returncode != 0:
         raise HTTPException(500, f"ffmpeg failed: {proc.stderr.decode()[:300]}")
     return proc.stdout
@@ -181,6 +192,9 @@ def build_kwargs(req: SpeechRequest) -> dict:
         language = language or v.language
     if language:
         kwargs["language"] = language
+        if NORMALIZE_ENABLED:
+            # normalize() leaves anything but pl/en untouched and reduces pl-PL -> pl itself
+            kwargs["text"] = normalize(req.input, language)
     return kwargs
 
 
@@ -212,6 +226,7 @@ def to_wav(src: Path, dst: Path) -> None:
             ["ffmpeg", "-loglevel", "error", "-y", "-i", str(src), "-ac", "1", "-ar", str(SR), "-c:a", "pcm_s16le", str(dst)],
             capture_output=True,
             timeout=FFMPEG_TIMEOUT_S,
+            check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise HTTPException(400, f"decoding the audio file timed out after {FFMPEG_TIMEOUT_S}s") from exc
@@ -221,7 +236,7 @@ def to_wav(src: Path, dst: Path) -> None:
 
 @app.post("/v1/voices", status_code=201)
 async def create_voice(
-    file: UploadFile = File(...),
+    file: UploadFile = File(...),  # noqa: B008 - idiomatic FastAPI dependency
     name: str = Form(""),
     ref_text: str = Form(""),
     locale: str = Form(""),
@@ -274,7 +289,7 @@ async def create_voice(
                 prompt = await asyncio.to_thread(
                     state["model"].create_voice_clone_prompt, ref_audio=str(wav), ref_text=meta["ref_text"]
                 )
-            except Exception as exc:  # noqa: BLE001 - surface any model failure as a client-visible detail
+            except Exception as exc:  # surface any model failure as a client-visible detail
                 log.exception("clone prompt failed for '%s'", name)
                 raise HTTPException(400, f"voice cloning failed: {exc}") from exc
 
