@@ -12,6 +12,9 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
+from decimal import Decimal
+
+from num2words import num2words
 
 log = logging.getLogger("normalize")
 
@@ -22,7 +25,7 @@ Pass = Callable[[str, str], str]
 # Ordered (name, function(text, lang) -> text) passes, run after masking. Later tasks append here
 # in the order of design.md § Rewrite order: dates, money, ranges, percentages, units, grouped
 # thousands, decimals, integers, abbreviations, acronyms.
-PASSES: list[tuple[str, Pass]] = []
+PASSES: list[tuple[str, Pass]] = []  # filled in below the pass definitions
 
 # Language-specific data, filled in by the passes that use it.
 ABBREVIATIONS: dict[str, dict[str, str]] = {"pl": {}, "en": {}}
@@ -112,6 +115,79 @@ def _unmask(text: str, spans: list[str]) -> str:
             break
         text = restored
     return text
+
+
+# --- Numbers ---------------------------------------------------------------------------------
+
+# ASCII digits only: `\d` would also match other scripts' digits.
+_D = "[0-9]"
+# The separators of a pl grouped number: space, no-break space, narrow no-break space.
+_PL_GROUP_SEP = "[ \u00a0\u202f]"
+_DASHES = "-\u2013"  # hyphen-minus, en dash
+
+# A number as written in each language, before grouped thousands and decimals are rewritten.
+_RANGE_NUMBER = {
+    "pl": rf"{_D}+(?:,{_D}+)?",
+    "en": rf"{_D}{{1,3}}(?:,{_D}{{3}})+(?:\.{_D}+)?|{_D}+(?:\.{_D}+)?",
+}
+# Not inside a word, not continuing a number or a hyphen chain on either side.
+_NUM_START = rf"(?<![\w.,{_DASHES}])"
+_NUM_END = rf"(?!\w|[.,{_DASHES}]{_D})"
+
+_RANGE = {
+    lang: re.compile(rf"{_NUM_START}({num})[{_DASHES}]({num}){_NUM_END}")
+    for lang, num in _RANGE_NUMBER.items()
+}
+_RANGE_WORD = {"pl": "do", "en": "to"}
+
+# Groups of exactly three digits after the leading one to three digits.
+_GROUPED = {
+    "pl": re.compile(rf"(?<![0-9,.]){_D}{{1,3}}(?:{_PL_GROUP_SEP}{_D}{{3}})+(?!{_D})"),
+    "en": re.compile(rf"(?<![0-9,.]){_D}{{1,3}}(?:,{_D}{{3}})+(?!{_D}|,{_D})"),
+}
+_GROUP_SEP_RE = {"pl": re.compile(_PL_GROUP_SEP), "en": re.compile(",")}
+
+# A decimal needs digits on both sides, so a sentence-final dot (`ma 32.`) stays punctuation.
+_DECIMAL = {
+    "pl": re.compile(rf"(?<![0-9,.])({_D}+),({_D}+)(?!{_D}|[.,]{_D})"),
+    "en": re.compile(rf"(?<![0-9,.])({_D}+)\.({_D}+)(?!{_D}|[.,]{_D})"),
+}
+_INTEGER = re.compile(rf"{_D}+")
+
+
+def _ranges(text: str, lang: str) -> str:
+    """`4-5`, `1,2–1,6` → `4 do 5`; the numbers are read by the later passes."""
+    word = _RANGE_WORD[lang]
+    return _RANGE[lang].sub(lambda m: f"{m.group(1)} {word} {m.group(2)}", text)
+
+
+def _grouped_thousands(text: str, lang: str) -> str:
+    """`3 100` (pl), `3,100` (en) → `3100`; a decimal part after it is left for the next pass."""
+    sep = _GROUP_SEP_RE[lang]
+    return _GROUPED[lang].sub(lambda m: sep.sub("", m.group()), text)
+
+
+def _decimals(text: str, lang: str) -> str:
+    """`1,2` (pl), `1.2` (en) → num2words of the decimal value."""
+    return _DECIMAL[lang].sub(
+        lambda m: num2words(Decimal(f"{m.group(1)}.{m.group(2)}"), lang=lang), text
+    )
+
+
+def _integers(text: str, lang: str) -> str:
+    return _INTEGER.sub(lambda m: num2words(int(m.group()), lang=lang), text)
+
+
+# Passes still to come slot in by design.md § Rewrite order: dates and money before ranges,
+# percentages and units between ranges and grouped thousands, abbreviations and acronyms last.
+PASSES.extend(
+    [
+        ("ranges", _ranges),
+        ("grouped_thousands", _grouped_thousands),
+        ("decimals", _decimals),
+        ("integers", _integers),
+    ]
+)
 
 
 # --- Entry point ---------------------------------------------------------------------------
