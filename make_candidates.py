@@ -10,7 +10,6 @@ female ~165-280 Hz). Restart the server afterwards so the new voices are served.
 
 import argparse
 import json
-from pathlib import Path
 
 import librosa
 import numpy as np
@@ -68,7 +67,7 @@ def main() -> None:
                 json.dumps({"language": lang, "description": description}, ensure_ascii=False) + "\n"
             )
             print(f"ok {name}: {len(audio) / SR:.1f}s, median F0 {median_f0(np.asarray(audio)):.0f} Hz")
-        except Exception as e:  # keep going; report the failure
+        except Exception as e:  # noqa: BLE001 - keep going; report the failure
             print(f"FAIL {name}: {e!r}")
 
 

@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import server  # noqa: E402
+import server
 
 
 class FakeVoiceClonePrompt:
@@ -25,7 +25,7 @@ class FakeVoiceClonePrompt:
         self.ref_audio, self.ref_text, self.path = ref_audio, ref_text, path
 
     @classmethod
-    def load(cls, path: str) -> "FakeVoiceClonePrompt":
+    def load(cls, path: str) -> FakeVoiceClonePrompt:
         return cls(path=path)
 
     def save(self, path: str) -> None:
@@ -41,7 +41,7 @@ class FakeOmniVoice:
         self.clone_error: Exception | None = None  # set to make create_voice_clone_prompt fail
 
     @classmethod
-    def from_pretrained(cls, *_args, **_kwargs) -> "FakeOmniVoice":
+    def from_pretrained(cls, *_args, **_kwargs) -> FakeOmniVoice:
         return cls()
 
     def generate(self, **kwargs) -> list[np.ndarray]:

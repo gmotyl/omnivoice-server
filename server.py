@@ -170,7 +170,7 @@ def encode(audio: np.ndarray, fmt: str) -> bytes:
         return buf.getvalue()
     codec = {"mp3": ["-f", "mp3", "-b:a", "128k"], "opus": ["-f", "ogg", "-c:a", "libopus"], "aac": ["-f", "adts"]}[fmt]
     wav = encode(audio, "wav")
-    proc = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", "pipe:0", *codec, "pipe:1"], input=wav, capture_output=True)
+    proc = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", "pipe:0", *codec, "pipe:1"], input=wav, capture_output=True, check=False)
     if proc.returncode != 0:
         raise HTTPException(500, f"ffmpeg failed: {proc.stderr.decode()[:300]}")
     return proc.stdout
@@ -226,6 +226,7 @@ def to_wav(src: Path, dst: Path) -> None:
             ["ffmpeg", "-loglevel", "error", "-y", "-i", str(src), "-ac", "1", "-ar", str(SR), "-c:a", "pcm_s16le", str(dst)],
             capture_output=True,
             timeout=FFMPEG_TIMEOUT_S,
+            check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise HTTPException(400, f"decoding the audio file timed out after {FFMPEG_TIMEOUT_S}s") from exc
@@ -235,7 +236,7 @@ def to_wav(src: Path, dst: Path) -> None:
 
 @app.post("/v1/voices", status_code=201)
 async def create_voice(
-    file: UploadFile = File(...),
+    file: UploadFile = File(...),  # noqa: B008 - idiomatic FastAPI dependency
     name: str = Form(""),
     ref_text: str = Form(""),
     locale: str = Form(""),
@@ -288,7 +289,7 @@ async def create_voice(
                 prompt = await asyncio.to_thread(
                     state["model"].create_voice_clone_prompt, ref_audio=str(wav), ref_text=meta["ref_text"]
                 )
-            except Exception as exc:  # noqa: BLE001 - surface any model failure as a client-visible detail
+            except Exception as exc:  # surface any model failure as a client-visible detail
                 log.exception("clone prompt failed for '%s'", name)
                 raise HTTPException(400, f"voice cloning failed: {exc}") from exc
 

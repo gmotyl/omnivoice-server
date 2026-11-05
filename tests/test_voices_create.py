@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 import soundfile as sf
+from conftest import FakeVoiceClonePrompt, write_voice
 
 import server
-from conftest import FakeVoiceClonePrompt, write_voice
 
 FIELDS = {
     "name": "my-voice",
