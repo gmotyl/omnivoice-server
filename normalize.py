@@ -240,11 +240,25 @@ def _grouped_thousands(text: str, lang: str) -> str:
     return _GROUPED[lang].sub(lambda m: sep.sub("", m.group()), text)
 
 
+_DECIMAL_WORD = {"pl": "przecinek", "en": "point"}
+_ZERO_WORD = {"pl": "zero", "en": "zero"}
+
+
 def _decimals(text: str, lang: str) -> str:
-    """`1,2` (pl), `1.2` (en) → num2words of the decimal value."""
-    return _DECIMAL[lang].sub(
-        lambda m: num2words(Decimal(f"{m.group(1)}.{m.group(2)}"), lang=lang), text
-    )
+    """`1,2` (pl), `1.2` (en) → num2words of the decimal value.
+
+    num2words drops or garbles an all-zero fraction (`2.0` → "two"), so those are read as the
+    integer, the separator word and "zero" per digit.
+    """
+
+    def decimal(m: re.Match[str]) -> str:
+        whole, frac = m.group(1), m.group(2)
+        if frac.strip("0") == "":
+            zeros = " ".join([_ZERO_WORD[lang]] * len(frac))
+            return f"{num2words(int(whole), lang=lang)} {_DECIMAL_WORD[lang]} {zeros}"
+        return num2words(Decimal(f"{whole}.{frac}"), lang=lang)
+
+    return _DECIMAL[lang].sub(decimal, text)
 
 
 def _integers(text: str, lang: str) -> str:

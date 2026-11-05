@@ -285,3 +285,17 @@ def test_abbreviations_pl_en(language, text, expected):
 )
 def test_swallowed_sentence_2026_11_05(language, text, expected):
     assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "3,0", "trzy przecinek zero"),
+        ("pl", "3,00", "trzy przecinek zero zero"),
+        ("en", "2.0", "two point zero"),
+        ("en", "0.00", "zero point zero zero"),
+        ("en", "1,000.0", "one thousand point zero"),
+    ],
+)
+def test_all_zero_fraction(language, text, expected):
+    assert normalize(text, language) == expected
