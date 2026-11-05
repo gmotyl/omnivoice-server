@@ -127,7 +127,9 @@ def normalize(text: str, language: str) -> str: ...
 - [x] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
 - [x] **Step 3: Commit** — `git commit -am "feat(normalize): dates and money"`
 
-### Task 5: Acronyms
+### Task 5: Acronyms (superseded)
+
+> **Superseded 2026-11-05:** implemented, then removed in 932778b after the Task 7 listening check — OmniVoice reads all-caps acronyms correctly itself and letter-name spelling made speech worse. The criteria below are historical; acronyms now pass through unchanged (see design.md § 11, spec "Acronyms are left to the model"). Do not restore.
 
 **Files:**
 - Modify: `normalize.py`

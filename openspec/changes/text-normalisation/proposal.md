@@ -23,7 +23,7 @@ the same content written out in words (214 characters) rendered in 13.4 s and so
 ## What
 
 - A new `normalize.py` module in omnivoice-server rewrites numbers, decimals, ranges, percentages,
-  units, amounts of money, dates, abbreviations and acronyms into their spoken form, for Polish and English.
+  units, amounts of money, dates and abbreviations into their spoken form, for Polish and English. (Acronym spelling was in scope but was removed after the listening check: OmniVoice reads acronyms well by itself.)
 - `build_kwargs` applies it once the request's language is resolved, before `model.generate`.
   Other languages, or no language at all, pass through unchanged.
 - The env var `OMNIVOICE_NORMALIZE=0` turns it off for A/B listening.
