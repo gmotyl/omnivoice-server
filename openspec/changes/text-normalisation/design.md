@@ -66,13 +66,10 @@ pattern consumes its digits before a more general one sees them:
    - Polish: ok. → około, np. → na przykład, tj. → to jest, m.in. → między innymi, itd. →
      i tak dalej, tzw. → tak zwany, godz. → godzina, r. (after a year) → roku.
    - English: e.g. → for example, i.e. → that is, approx. → approximately, vs. → versus.
-11. **Acronyms**: a whole token of 2–5 uppercase ASCII letters, optionally with a lowercase plural
-    `s` (`PRs`). It is spelled with that language's letter names (Polish "a pe i", "te te es";
-    English "A P I"), unless the token is in that language's read-as-word map (NATO, RAM, JSON,
-    ASAP, …). Mixed-case words (`OmniVoice`, `iPhone`) and single capitals are left alone. A
-    Roman numeral of I, V and X only (`II`, `IV`, `VIII`, `XIV`, without a plural `s`) is left as
-    written, not spelled; tokens with C, D, L or M (`CD`, `MI`) are likelier acronyms and are
-    still spelled.
+11. **Acronyms — removed.** Spelling all-caps tokens with letter names (pl `API` → "a pe i")
+    was implemented and then removed after the listening check (2026-11-05): OmniVoice pronounces
+    all-caps acronyms correctly by itself, and the letter-name spelling degraded the output.
+    All-caps tokens now pass through unchanged.
 
 **Why whole tokens:** a loose match in another project's pronunciation map rewrote ordinary
 Polish words. Every pattern here is anchored to a token boundary and is case-sensitive.
@@ -91,8 +88,8 @@ the request, a warning is logged with the pass name, and the remaining passes st
 ## Testing
 
 - `tests/test_normalize.py`: a parametrised table of input → expected output per pass and language,
-  including the 2026-11-05 sentence that got swallowed, the protected spans, the acronym
-  exceptions, and each currency in both positions with 1, 2, 5, 12 and 22 units.
+  including the 2026-11-05 sentence that got swallowed, the protected spans, all-caps
+  acronyms left unchanged, and each currency in both positions with 1, 2, 5, 12 and 22 units.
 - `tests/test_speech_normalize.py`: through the TestClient and the fake model, `generate`
   receives normalised text for `pl` and `en`, unchanged text for another language, and unchanged
   text when `OMNIVOICE_NORMALIZE=0`.
@@ -103,6 +100,5 @@ the request, a warning is logged with the pass name, and the remaining passes st
 
 ## Glossary
 
-- **Normalisation** — rewriting written-only tokens (digits, symbols, abbreviations, acronyms) into the words a speaker would say, before synthesis. _Avoid:_ "text cleanup", "stripping".
+- **Normalisation** — rewriting written-only tokens (digits, symbols, abbreviations) into the words a speaker would say, before synthesis. _Avoid:_ "text cleanup", "stripping".
 - **Protected span** — a stretch of text that normalisation must leave byte-for-byte unchanged (bracket tags, URLs, paths, identifiers).
-- **Read-as-word acronym** — an all-caps token said as a word (NATO, RAM, JSON) rather than spelled letter by letter.

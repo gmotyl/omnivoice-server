@@ -59,8 +59,9 @@ serve` state.
 ## Text normalisation
 
 Before synthesis, `POST /v1/audio/speech` rewrites numbers, decimals, ranges, percentages, units,
-dates, money, abbreviations and acronyms into spoken words (`12,5%` → "dwanaście przecinek pięć procent",
-`API` → "a pe i"), so the model says them and its duration estimate matches what is said.
+dates, money and abbreviations into spoken words (`12,5%` → "dwanaście przecinek pięć procent"),
+so the model says them and its duration estimate matches what is said. All-caps acronyms (`API`,
+`GPU`) are left as written: OmniVoice pronounces them correctly by itself.
 
 - **Scope:** `pl` and `en` only; any other language passes through unchanged. A locale such as
   `pl-PL` is reduced to `pl`.

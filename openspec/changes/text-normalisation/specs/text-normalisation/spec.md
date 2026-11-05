@@ -63,20 +63,16 @@ An amount with a currency symbol or code (PLN/zł, EUR/€, USD/$, GBP/£, CHF, 
 - **WHEN** language `pl` and the input contains `10–20 zł`
 - **THEN** it becomes `dziesięć do dwadzieścia złotych`, with the currency named once
 
-### Requirement: Acronyms are spelled by letter
-An all-caps token of 2–5 letters is spelled with the language's letter names, unless it is in the read-as-word map.
+### Requirement: Acronyms are left to the model
+An all-caps token is passed to the model unchanged; OmniVoice pronounces acronyms correctly by itself.
 
 #### Scenario: Polish acronym
 - **WHEN** language `pl` and the input contains `API`
-- **THEN** it becomes `a pe i`
+- **THEN** it is left as `API`
 
 #### Scenario: English acronym
 - **WHEN** language `en` and the input contains `GPU`
-- **THEN** it becomes `G P U`
-
-#### Scenario: Read-as-word acronym
-- **WHEN** the input contains `JSON`
-- **THEN** it is left as `JSON`
+- **THEN** it is left as `GPU`
 
 #### Scenario: Mixed-case word
 - **WHEN** the input contains `OmniVoice`
