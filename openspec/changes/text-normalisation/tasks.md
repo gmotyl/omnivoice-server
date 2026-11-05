@@ -1,6 +1,6 @@
 # Text normalisation Implementation Plan
 
-> **For agentic workers:** implement this plan with [[pavilio-execute-plan]] — task-by-task, top-down; check off each step (`- [ ]` → `- [x]`) as it lands. Do one task fully (test → implement → verify → commit) before starting the next.
+> **For agentic workers:** implement this plan with [[pavilio-execute-plan]] — task-by-task, top-down; check off each step (`- [x]` → `- [x]`) as it lands. Do one task fully (test → implement → verify → commit) before starting the next.
 
 **Goal:** Rewrite numbers, dates, money, units, abbreviations and acronyms into spoken Polish or English words before OmniVoice synthesis, so the duration estimate matches what is actually said.
 
@@ -39,8 +39,8 @@ def normalize(text: str, language: str) -> str: ...
 - "test_protected_spans_untouched"
 - "test_failing_pass_is_skipped_and_logged"
 
-- [ ] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
+- [x] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
 - [ ] **Step 3: Commit** — `git add pyproject.toml uv.lock normalize.py tests/test_normalize.py && git commit -m "feat(normalize): module skeleton with protected spans"`
 
 ### Task 2: Integers, grouped thousands, decimals, ranges
