@@ -428,6 +428,9 @@ _CURRENCY_TRIM = re.compile(r" (?:amerykańsk\w*|sterling)(?=,|$)")
 # num2words always names both parts, even a zero one ("pięć euro, zero centów").
 _ZERO_MINOR = re.compile(r", zero \S+$")
 _ZERO_MAJOR = re.compile(r"^zero \S+, ")
+# pl "euro" is neuter: a major count of exactly 1 is "jedno euro", not num2words' "jeden euro".
+# Anchored at the start, so "dwadzieścia jeden euro" is left alone.
+_PL_ONE_EURO = re.compile(r"^jeden euro\b")
 
 # An amount has at most two decimal places; `1,999 zł` is left to the number passes.
 _MONEY_AMOUNT = {
@@ -487,14 +490,23 @@ def _is_feminine(code: str, lang: str) -> bool:
     return bool(local and local[2])
 
 
+def _num2words_amount(amount: Decimal, code: str, lang: str) -> str:
+    """num2words' currency text, long names trimmed, then a zero part dropped."""
+    # A Decimal, never an int: num2words reads a bare int as minor units (199 → 1.99).
+    words = num2words(amount, lang=lang, to="currency", currency=code)
+    # Trim first: `_ZERO_MAJOR` expects one word before the comma ("zero dolarów, ...").
+    words = _CURRENCY_TRIM.sub("", words)
+    return _ZERO_MAJOR.sub("", _ZERO_MINOR.sub("", words))
+
+
 def _amount_words(amount: Decimal, code: str, lang: str) -> str:
     """An amount in words with its currency; a zero minor or major part is dropped."""
     amount = amount.quantize(Decimal("0.01"))
     if code in _NUM2WORDS_CURRENCIES[lang]:
-        # A Decimal, never an int: num2words reads a bare int as minor units (199 → 1.99).
-        words = num2words(amount, lang=lang, to="currency", currency=code)
-        words = _ZERO_MAJOR.sub("", _ZERO_MINOR.sub("", words))
-        return _CURRENCY_TRIM.sub("", words)
+        words = _num2words_amount(amount, code, lang)
+        if lang == "pl" and code == "EUR":
+            words = _PL_ONE_EURO.sub("jedno euro", words)
+        return words
     major_forms, minor_forms, feminine = _LOCAL_CURRENCY[lang][code]
     major = int(amount)
     minor = int((amount - major) * 100)
@@ -509,7 +521,7 @@ def _amount_words(amount: Decimal, code: str, lang: str) -> str:
 def _currency_word(n: int, code: str, lang: str) -> str:
     """The currency's name in the form a whole number `n` takes ("złotych" for 20)."""
     if code in _NUM2WORDS_CURRENCIES[lang]:
-        words = _amount_words(Decimal(n), code, lang)
+        words = _num2words_amount(Decimal(n).quantize(Decimal("0.01")), code, lang)
         return words.removeprefix(num2words(n, lang=lang) + " ")
     major_forms, _, _ = _LOCAL_CURRENCY[lang][code]
     return major_forms[_plural_index(n, lang)]

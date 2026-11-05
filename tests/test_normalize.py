@@ -368,7 +368,10 @@ def test_slash_date_not_a_date(language, text, expected):
         ("pl", "12 zł", "dwanaście złotych"),
         ("pl", "22 zł", "dwadzieścia dwa złote"),
         ("pl", "1 200 zł", "tysiąc dwieście złotych"),
-        ("pl", "€1", "jeden euro"),
+        ("pl", "€1", "jedno euro"),
+        ("pl", "1 €", "jedno euro"),
+        ("pl", "1,50 EUR", "jedno euro, pięćdziesiąt centów"),
+        ("pl", "21 €", "dwadzieścia jeden euro"),
         ("pl", "2 EUR", "dwa euro"),
         ("pl", "2,02 €", "dwa euro, dwa centy"),
         ("pl", "$1", "jeden dolar"),
@@ -393,6 +396,21 @@ def test_slash_date_not_a_date(language, text, expected):
 )
 def test_money_num2words_currencies(language, text, expected):
     assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "$0,99", "dziewięćdziesiąt dziewięć centów"),
+        ("pl", "0,50 USD", "pięćdziesiąt centów"),
+        ("en", "£0.05", "five pence"),
+        ("en", "0.50 GBP", "fifty pence"),
+    ],
+)
+def test_money_zero_major_part_dropped_long_names(language, text, expected):
+    out = normalize(text, language)
+    assert out == expected
+    assert "zero" not in out
 
 
 @pytest.mark.parametrize(
