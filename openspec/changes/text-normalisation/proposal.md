@@ -23,18 +23,18 @@ the same content written out in words (214 characters) rendered in 13.4 s and so
 ## What
 
 - A new `normalize.py` module in omnivoice-server rewrites numbers, decimals, ranges, percentages,
-  units, dates, abbreviations and acronyms into their spoken form, for Polish and English.
+  units, amounts of money, dates, abbreviations and acronyms into their spoken form, for Polish and English.
 - `build_kwargs` applies it once the request's language is resolved, before `model.generate`.
   Other languages, or no language at all, pass through unchanged.
 - The env var `OMNIVOICE_NORMALIZE=0` turns it off for A/B listening.
 - New dependency: `num2words`.
-- Verification: a set of Polish and English test sentences (numbers, dates, acronyms), rendered
+- Verification: a set of Polish and English test sentences (numbers, dates, amounts, acronyms), rendered
   before and after the change on a listening page.
 
 ## Out of scope
 
 - Case agreement of numerals (nominative only; decided 2026-11-05).
-- Money and currencies, times of day, phone numbers, Roman numerals.
+- Times of day, phone numbers, Roman numerals.
 - Languages other than Polish and English.
 - Mixed Polish and English inside one utterance (the request language decides).
 - Any change in the pavilio panel or anytts.

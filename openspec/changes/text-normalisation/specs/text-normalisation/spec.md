@@ -36,6 +36,33 @@ Polish numeric and ISO dates, and English ISO and month-name dates, become spoke
 - **WHEN** the input contains `5/11/2026`
 - **THEN** it is not read as a date
 
+### Requirement: Amounts of money are spoken
+An amount with a currency symbol or code (PLN/zł, EUR/€, USD/$, GBP/£, CHF, CZK/Kč), before or after the number, becomes a spoken amount with the currency declined.
+
+#### Scenario: Polish złoty with grosze
+- **WHEN** language `pl` and the input contains `12,50 zł`
+- **THEN** it becomes `dwanaście złotych, pięćdziesiąt groszy`
+
+#### Scenario: Whole amount drops the zero minor part
+- **WHEN** language `pl` and the input contains `5 €`
+- **THEN** it becomes `pięć euro`
+
+#### Scenario: English dollars, symbol first
+- **WHEN** language `en` and the input contains `$12.50`
+- **THEN** it becomes `twelve dollars, fifty cents`
+
+#### Scenario: Integer amount is not read as cents
+- **WHEN** language `pl` and the input contains `199 USD`
+- **THEN** it becomes `sto dziewięćdziesiąt dziewięć dolarów`
+
+#### Scenario: Czech crowns use the Polish plural rule
+- **WHEN** language `pl` and the input contains `1 Kč`, `3 Kč`, `12 Kč` or `22 Kč`
+- **THEN** they become `jedna korona`, `trzy korony`, `dwanaście koron` and `dwadzieścia dwie korony`
+
+#### Scenario: Range of amounts
+- **WHEN** language `pl` and the input contains `10–20 zł`
+- **THEN** it becomes `dziesięć do dwadzieścia złotych`, with the currency named once
+
 ### Requirement: Acronyms are spelled by letter
 An all-caps token of 2–5 letters is spelled with the language's letter names, unless it is in the read-as-word map.
 

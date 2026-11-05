@@ -30,25 +30,40 @@ pattern consumes its digits before a more general one sees them:
      `5 listopada 2026` → the same, with the written month kept.
    - English: ISO and `November 5, 2026` / `5 November 2026` → "November fifth, twenty
      twenty-six" (`num2words(to="year")`). An ambiguous `5/11/2026` is not a date pattern.
-3. **Ranges**: number, `–` or `-`, number, with no spaces around a hyphen → "X do Y" / "X to Y".
+3. **Money** (before ranges, so `10–20 zł` is read as one amount range): a symbol or code before
+   or after an amount — `12,50 zł`, `12,50 PLN`, `$12.50`, `12.50 USD`, `5 €`, `€5`, `£3`,
+   `100 Kč`, `20 CHF`. The amount is parsed as a `Decimal` with the language's decimal separator
+   and grouped thousands.
+   - PLN, EUR and USD (both languages) and GBP (English) go through
+     `num2words(Decimal, to="currency")`, which declines correctly ("trzy złote, pięćdziesiąt
+     groszy"). A zero minor part is dropped ("pięć euro", not "pięć euro, zero centów"), and the
+     long Polish "dolarów amerykańskich" is shortened to "dolarów".
+   - GBP in Polish, CHF and CZK (both languages) use a small local table of word forms. Polish
+     picks the form with the standard plural rule: 1 → singular ("korona"), 2–4 except 12–14 →
+     "korony", else → "koron". Feminine units (korona) take "jedna" and "dwie", including
+     inside compounds ("dwadzieścia dwie korony"). English uses singular for 1 and plural otherwise. The minor unit
+     (pens, rappen/centymy, halerze) follows the same rule.
+   - A range of amounts (`10–20 zł`) reads both numbers in the nominative and names the currency
+     once, in the form the last number takes ("dziesięć do dwadzieścia złotych").
+4. **Ranges** (an amount range with a currency has already been taken by pass 3): number, `–` or `-`, number, with no spaces around a hyphen → "X do Y" / "X to Y".
    A spaced hyphen is a dash in prose, not a range. Date patterns have already been taken.
-4. **Percentages**: `15%`, `1,5 %` → "piętnaście procent" / "fifteen percent".
-5. **Units after a number** (whole token, case-sensitive): s, ms, min, h, KB, MB, GB, TB, Hz,
+5. **Percentages**: `15%`, `1,5 %` → "piętnaście procent" / "fifteen percent".
+6. **Units after a number** (whole token, case-sensitive): s, ms, min, h, KB, MB, GB, TB, Hz,
    kHz, px → a fixed word per language. Polish uses the plural form for any number ("sekundy",
    "gigabajty"), following the nominative-only decision. English uses "second" for 1 and
    "seconds" otherwise.
-6. **Decimals**: the Polish comma (`1,2`) and the English point (`1.2`) → `num2words(float)`
+7. **Decimals**: the Polish comma (`1,2`) and the English point (`1.2`) → `num2words(float)`
    ("jeden przecinek dwa", "one point two"). Digits after the separator are read as a number, as
    num2words does.
-7. **Grouped thousands**: `3 100` and `3 100` (non-breaking space) in Polish, `3,100` in English →
+8. **Grouped thousands**: `3 100` and `3 100` (non-breaking space) in Polish, `3,100` in English →
    one integer. The pattern requires groups of exactly three digits, so the Polish decimal `1,2`
    never matches it.
-8. **Integers** → cardinal `num2words`.
-9. **Abbreviations** (whole token, with its dot):
+9. **Integers** → cardinal `num2words`.
+10. **Abbreviations** (whole token, with its dot):
    - Polish: ok. → około, np. → na przykład, tj. → to jest, m.in. → między innymi, itd. →
      i tak dalej, tzw. → tak zwany, godz. → godzina, r. (after a year) → roku.
    - English: e.g. → for example, i.e. → that is, approx. → approximately, vs. → versus.
-10. **Acronyms**: a whole token of 2–5 uppercase ASCII letters, optionally with a lowercase plural
+11. **Acronyms**: a whole token of 2–5 uppercase ASCII letters, optionally with a lowercase plural
     `s` (`PRs`). It is spelled with that language's letter names (Polish "a pe i", "te te es";
     English "A P I"), unless the token is in that language's read-as-word map (NATO, RAM, JSON,
     ASAP, …). Mixed-case words (`OmniVoice`, `iPhone`) and single capitals are left alone.
@@ -58,9 +73,9 @@ Polish words. Every pattern here is anchored to a token boundary and is case-sen
 
 ## num2words notes
 
-- A bare `int` passed to `to="currency"` is treated as minor units (199 → 1.99). Currency is out of
-  scope, but the trap is noted in case the scope grows.
-- Polish currency support has no CZK.
+- A bare `int` passed to `to="currency"` is treated as minor units (199 → 1.99). Always pass a
+  `Decimal`.
+- Polish has no GBP, CHF or CZK; English has no CHF or CZK. Those go through the local table.
 
 ## Error handling
 
@@ -70,13 +85,13 @@ the request, a warning is logged with the pass name, and the remaining passes st
 ## Testing
 
 - `tests/test_normalize.py`: a parametrised table of input → expected output per pass and language,
-  including the 2026-11-05 sentence that got swallowed, the protected spans, and the acronym
-  exceptions.
+  including the 2026-11-05 sentence that got swallowed, the protected spans, the acronym
+  exceptions, and each currency in both positions with 1, 2, 5, 12 and 22 units.
 - `tests/test_speech_normalize.py`: through the TestClient and the fake model, `generate`
   receives normalised text for `pl` and `en`, unchanged text for another language, and unchanged
   text when `OMNIVOICE_NORMALIZE=0`.
 - Verification sentences (`audition/normalize_sentences.txt`, PL and EN, covering numbers, dates,
-  ranges, units and acronyms) are rendered on `krystyna1` and one English voice with the switch off
+  ranges, units, amounts and acronyms) are rendered on `krystyna1` and one English voice with the switch off
   and on. The results go on a listening page in the tts-providers mockups, with each render's
   length shown.
 
