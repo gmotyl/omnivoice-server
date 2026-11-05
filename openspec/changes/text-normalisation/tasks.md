@@ -189,7 +189,8 @@ def normalize(text: str, language: str) -> str: ...
 - `normalize_ab.py` renders the baseline against a server started with `OMNIVOICE_NORMALIZE=0`, then restarts it with the default and renders the normalised run. The switch is read once at import, so it cannot be flipped per request. The script records the normalised text by calling `normalize.normalize` directly.
 
 - [x] **Step 1:** write the sentences and the script; run it — Expected: page written, lengths as above
-- [ ] **Step 2:** user listens and confirms — Expected: no swallowed words
+- [x] **Step 2:** user listens and confirms — Expected: no swallowed words
+  - 2026-11-05 Greg: no swallowed words caused by normalisation. "adres" + URL misread in both versions (protected span; the panel strips links anyway) → follow-up. Spelled acronyms ("a pe i") were worse than the model's own reading → Task 5 pass removed in 932778b.
 - [x] **Step 3: Commit** — omnivoice-server: `git add audition/normalize_sentences.txt audition/normalize_ab.py && git commit -m "test(audition): normalisation A/B sentences"`; workspace repo: commit the mockup on `main`
 
 ### Task 8: README
