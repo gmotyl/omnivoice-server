@@ -239,7 +239,9 @@ def test_units_after_number(language, text, expected):
     ],
 )
 def test_unit_letter_without_number_unchanged(language, text):
-    assert normalize(text, language) == text
+    # The units pass alone: a bare all-caps `GB` is later spelled by the acronyms pass.
+    assert nm._units(text, language) == text
+    assert normalize(text, language) == text.replace("GB", "G B")
 
 
 @pytest.mark.parametrize(
@@ -543,3 +545,77 @@ def test_money_range(language, text, expected):
 )
 def test_capitalised_abbreviations(language, text, expected):
     assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("API", "a pe i"),
+        ("TTS", "te te es"),
+        ("PR", "pe er"),
+        ("Otwórz PR, potem API.", "Otwórz pe er, potem a pe i."),
+        ("(GPU)", "(gie pe u)"),
+        ("XYZ", "iks igrek zet"),
+    ],
+)
+def test_acronyms_spelled_pl(text, expected):
+    assert normalize(text, "pl") == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("GPU", "G P U"),
+        ("Use the API.", "Use the A P I."),
+        ("TTS and GPU", "T T S and G P U"),
+        # Money consumes a code next to an amount, so the acronym pass never sees it.
+        ("12.50 USD", "twelve dollars, fifty cents"),
+    ],
+)
+def test_acronyms_spelled_en(text, expected):
+    assert normalize(text, "en") == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "PRs", "pe ery"),
+        ("pl", "Dwa PRs.", "Dwa pe ery."),
+        ("pl", "APIs", "a pe i"),
+        ("pl", "GPUs", "gie pe u"),
+        ("pl", "SDKs", "es de ka"),
+        ("pl", "VMs", "fau emy"),
+        ("en", "PRs", "P Rs"),
+        ("en", "APIs", "A P Is"),
+    ],
+)
+def test_acronym_plural_s(language, text, expected):
+    assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize("language", ["pl", "en"])
+@pytest.mark.parametrize("text", ["JSON", "RAM", "NATO", "ASAP", "OK", "OK, NASA i GIFs."])
+def test_read_as_word_acronyms_unchanged(language, text):
+    assert normalize(text, language) == text
+
+
+@pytest.mark.parametrize("language", ["pl", "en"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "OmniVoice",
+        "iPhone",
+        "A",
+        "I am",
+        "UNESCO",
+        "ABCDEF",
+        "APIx",
+        "xAPI",
+        "API_KEY",
+        "OMNIVOICE_STEPS",
+        "OMNIVOICE_STEPS=16",
+        "MyAPI",
+    ],
+)
+def test_mixed_case_and_single_capital_unchanged(language, text):
+    assert normalize(text, language) == text

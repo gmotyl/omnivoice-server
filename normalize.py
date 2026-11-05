@@ -22,9 +22,9 @@ SUPPORTED_LANGUAGES = ("pl", "en")
 
 Pass = Callable[[str, str], str]
 
-# Ordered (name, function(text, lang) -> text) passes, run after masking. Later tasks append here
-# in the order of design.md § Rewrite order: dates, money, ranges, percentages, units, grouped
-# thousands, decimals, integers, abbreviations, acronyms.
+# Ordered (name, function(text, lang) -> text) passes, run after masking, in the order of
+# design.md § Rewrite order: dates, money, ranges, percentages, units, grouped thousands,
+# decimals, integers, abbreviations, acronyms.
 PASSES: list[tuple[str, Pass]] = []  # filled in below the pass definitions
 
 # Language-specific data, filled in by the passes that use it.
@@ -630,7 +630,64 @@ def _abbreviations(text: str, lang: str) -> str:
     return _ABBREVIATION[lang].sub(expand, text)
 
 
-# Passes still to come slot in by design.md § Rewrite order: acronyms after abbreviations.
+# --- Acronyms ------------------------------------------------------------------------------
+
+# All-caps tokens said as a word, not spelled; kept small and only for clear cases. A token of
+# six or more letters (UNESCO, PESEL-like) is never spelled anyway.
+READ_AS_WORD_ACRONYMS["pl"] = frozenset(
+    {"NATO", "NASA", "RAM", "ROM", "JSON", "YAML", "ASAP", "OK", "GIF", "PIN", "LOL", "PESEL"}
+)
+READ_AS_WORD_ACRONYMS["en"] = frozenset(
+    {"NATO", "NASA", "RAM", "ROM", "JSON", "YAML", "ASAP", "OK", "GIF", "PIN", "LOL"}
+)
+
+_PL_LETTER_NAMES = dict(
+    zip(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        (
+            *("a", "be", "ce", "de", "e", "ef", "gie", "ha", "i", "jot", "ka", "el", "em"),
+            *("en", "o", "pe", "ku", "er", "es", "te", "u", "fau", "wu", "iks", "igrek", "zet"),
+        ),
+        strict=True,
+    )
+)
+# A whole token of 2-5 ASCII capitals with an optional plural `s`. Not glued to a letter, digit,
+# underscore or hyphen on either side (`MyAPI`, `API_KEY`, `COVID-19` stay as written).
+_ACRONYM = re.compile(r"(?<![\w-])([A-Z]{2,5})(s?)(?![\w-])")
+
+
+def _pl_plural(name: str) -> str:
+    """Plural of a pl letter name, used for the last letter of `PRs`.
+
+    A name ending in a consonant takes `-y` (er → ery, em → emy, iks → iksy), or `-i` after
+    k / g (igrek → igreki), as Polish spelling requires. A name ending in a vowel is left as is
+    (`APIs` → "a pe i", `SDKs` → "es de ka"): such plurals are said without an ending.
+    """
+    if name[-1] in "aeiou":
+        return name
+    if name[-1] in "kg":
+        return name + "i"
+    return name + "y"
+
+
+def _acronyms(text: str, lang: str) -> str:
+    """`API` → pl "a pe i", en "A P I"; `PRs` → pl "pe ery", en "P Rs". Runs last."""
+    keep = READ_AS_WORD_ACRONYMS[lang]
+
+    def spell(m: re.Match[str]) -> str:
+        letters, plural = m.group(1), m.group(2)
+        if letters in keep:
+            return m.group()
+        if lang == "en":
+            return " ".join(letters) + plural
+        names = [_PL_LETTER_NAMES[ch] for ch in letters]
+        if plural:
+            names[-1] = _pl_plural(names[-1])
+        return " ".join(names)
+
+    return _ACRONYM.sub(spell, text)
+
+
 # `year_suffix` is the `r.` abbreviation, taken while the year is still digits; a date's `r.` is
 # taken by the dates pass itself.
 PASSES.extend(
@@ -645,6 +702,7 @@ PASSES.extend(
         ("decimals", _decimals),
         ("integers", _integers),
         ("abbreviations", _abbreviations),
+        ("acronyms", _acronyms),
     ]
 )
 
