@@ -46,7 +46,8 @@ pattern consumes its digits before a more general one sees them:
    - A range of amounts (`10–20 zł`) reads both numbers in the nominative and names the currency
      once, in the form the last number takes ("dziesięć do dwadzieścia złotych").
 4. **Ranges** (an amount range with a currency has already been taken by pass 3): number, `–` or `-`, number, with no spaces around a hyphen → "X do Y" / "X to Y".
-   A spaced hyphen is a dash in prose, not a range. Date patterns have already been taken.
+   A spaced hyphen or a spaced en dash (` – `) is a dash in prose, not a range. Date patterns
+   have already been taken.
 5. **Percentages**: `15%`, `1,5 %` → "piętnaście procent" / "fifteen percent".
 6. **Units after a number** (whole token, case-sensitive): s, ms, min, h, KB, MB, GB, TB, Hz,
    kHz, px → a fixed word per language. Polish uses the plural form for any number ("sekundy",
@@ -55,9 +56,11 @@ pattern consumes its digits before a more general one sees them:
 7. **Grouped thousands** (before decimals, so `1 234,5` is one number): `3 100` and `3 100` (non-breaking space) in Polish, `3,100` in English →
    the digits joined, keeping any decimal part. The pattern requires groups of exactly three digits, so the Polish decimal `1,2`
    never matches it.
-8. **Decimals**: the Polish comma (`1,2`) and the English point (`1.2`) → `num2words(float)`
-   ("jeden przecinek dwa", "one point two"). Digits after the separator are read as a number, as
-   num2words does.
+8. **Decimals**: the Polish comma (`1,2`) and the English point (`1.2`) → `num2words(Decimal)`
+   ("jeden przecinek dwa", "one point two"). A `Decimal`, not a `float`, so trailing digits
+   survive: `1,10` → "jeden przecinek dziesięć". Digits after the separator are read as a number,
+   as num2words does. An all-zero fraction is read digit by digit (`2,00` → "dwa przecinek zero
+   zero"), since num2words drops or garbles it.
 9. **Integers** → cardinal `num2words`.
 10. **Abbreviations** (whole token, with its dot):
    - Polish: ok. → około, np. → na przykład, tj. → to jest, m.in. → między innymi, itd. →
@@ -66,7 +69,10 @@ pattern consumes its digits before a more general one sees them:
 11. **Acronyms**: a whole token of 2–5 uppercase ASCII letters, optionally with a lowercase plural
     `s` (`PRs`). It is spelled with that language's letter names (Polish "a pe i", "te te es";
     English "A P I"), unless the token is in that language's read-as-word map (NATO, RAM, JSON,
-    ASAP, …). Mixed-case words (`OmniVoice`, `iPhone`) and single capitals are left alone.
+    ASAP, …). Mixed-case words (`OmniVoice`, `iPhone`) and single capitals are left alone. A
+    Roman numeral of I, V and X only (`II`, `IV`, `VIII`, `XIV`, without a plural `s`) is left as
+    written, not spelled; tokens with C, D, L or M (`CD`, `MI`) are likelier acronyms and are
+    still spelled.
 
 **Why whole tokens:** a loose match in another project's pronunciation map rewrote ordinary
 Polish words. Every pattern here is anchored to a token boundary and is case-sensitive.
