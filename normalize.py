@@ -161,6 +161,79 @@ def _ranges(text: str, lang: str) -> str:
     return _RANGE[lang].sub(lambda m: f"{m.group(1)} {word} {m.group(2)}", text)
 
 
+# --- Percentages, units, years ---------------------------------------------------------------
+
+# Spaces allowed between a number and its `%` sign or unit.
+_SPACE = "[ \u00a0\u202f]"
+_PERCENT = {
+    lang: re.compile(rf"{_NUM_START}({num}){_SPACE}?%") for lang, num in _RANGE_NUMBER.items()
+}
+_PERCENT_WORD = {"pl": "procent", "en": "percent"}
+
+# unit -> pl fixed plural, en singular, en plural.
+_UNITS: dict[str, tuple[str, str, str]] = {
+    "s": ("sekundy", "second", "seconds"),
+    "ms": ("milisekundy", "millisecond", "milliseconds"),
+    "min": ("minuty", "minute", "minutes"),
+    "h": ("godziny", "hour", "hours"),
+    "KB": ("kilobajty", "kilobyte", "kilobytes"),
+    "MB": ("megabajty", "megabyte", "megabytes"),
+    "GB": ("gigabajty", "gigabyte", "gigabytes"),
+    "TB": ("terabajty", "terabyte", "terabytes"),
+    "Hz": ("herce", "hertz", "hertz"),
+    "kHz": ("kiloherce", "kilohertz", "kilohertz"),
+    "px": ("piksele", "pixel", "pixels"),
+}
+# Longest first so `ms` / `kHz` win over `s` / `Hz`; the unit is a whole, case-sensitive token.
+_UNIT_ALT = "|".join(sorted(map(re.escape, _UNITS), key=len, reverse=True))
+_UNIT = {
+    lang: re.compile(rf"{_NUM_START}({num})({_SPACE}+)({_UNIT_ALT})(?!\w)")
+    for lang, num in _RANGE_NUMBER.items()
+}
+
+# `2026 r.` → `2026 roku`; only after a four-digit year, so a lone `r.` stays.
+_YEAR_R = re.compile(rf"(?<![\w.,])({_D}{{4}}){_SPACE}+r\.(?!\w)")
+
+
+def _percentages(text: str, lang: str) -> str:
+    """`15%`, `1,5 %` → `15 procent`; the number is read by the later passes."""
+    word = _PERCENT_WORD[lang]
+    return _PERCENT[lang].sub(lambda m: f"{m.group(1)} {word}", text)
+
+
+def _units(text: str, lang: str) -> str:
+    """`5 s` → `5 sekundy` / `5 seconds`; en uses the singular only for exactly 1."""
+
+    def unit(m: re.Match[str]) -> str:
+        pl, en_one, en_many = _UNITS[m.group(3)]
+        if lang == "pl":
+            word = pl
+        else:
+            word = en_one if m.group(1) == "1" else en_many
+        return f"{m.group(1)}{m.group(2)}{word}"
+
+    return _UNIT[lang].sub(unit, text)
+
+
+def _year_suffix(text: str, lang: str) -> str:
+    """pl `2026 r.` → `2026 roku` (with a sentence-ending dot kept); the year is read later."""
+    if lang != "pl":
+        return text
+    return _YEAR_R.sub(lambda m: m.group(1) + " " + _abbreviation_word(m, "roku", True), text)
+
+
+def _ends_sentence(text: str, end: int, capital_next: bool) -> bool:
+    """True when the abbreviation's dot is also the sentence's full stop."""
+    rest = text[end:]
+    if re.match(r"[ \t]*(?:\n|$)", rest):
+        return True
+    return capital_next and bool(re.match(r"\s+[A-ZĄĆĘŁŃÓŚŹŻ]", rest))
+
+
+def _abbreviation_word(m: re.Match[str], word: str, capital_next: bool) -> str:
+    return word + ("." if _ends_sentence(m.string, m.end(), capital_next) else "")
+
+
 def _grouped_thousands(text: str, lang: str) -> str:
     """`3 100` (pl), `3,100` (en) → `3100`; a decimal part after it is left for the next pass."""
     sep = _GROUP_SEP_RE[lang]
@@ -178,14 +251,58 @@ def _integers(text: str, lang: str) -> str:
     return _INTEGER.sub(lambda m: num2words(int(m.group()), lang=lang), text)
 
 
+# --- Abbreviations -----------------------------------------------------------------------
+
+ABBREVIATIONS["pl"].update(
+    {
+        "ok.": "około",
+        "np.": "na przykład",
+        "tj.": "to jest",
+        "m.in.": "między innymi",
+        "itd.": "i tak dalej",
+        "tzw.": "tak zwany",
+        "godz.": "godzina",
+    }
+)
+ABBREVIATIONS["en"].update(
+    {
+        "e.g.": "for example",
+        "i.e.": "that is",
+        "approx.": "approximately",
+        "vs.": "versus",
+    }
+)
+# Abbreviations that commonly close a sentence, so a capital after them means a new sentence.
+_SENTENCE_FINAL = frozenset({"itd."})
+_ABBREVIATION = {
+    lang: re.compile(
+        r"(?<![\w.])(" + "|".join(sorted(map(re.escape, table), key=len, reverse=True)) + r")(?!\w)"
+    )
+    for lang, table in ABBREVIATIONS.items()
+}
+
+
+def _abbreviations(text: str, lang: str) -> str:
+    """`ok.` → `około`; a dot that also ends the sentence is kept."""
+    table = ABBREVIATIONS[lang]
+    return _ABBREVIATION[lang].sub(
+        lambda m: _abbreviation_word(m, table[m.group(1)], m.group(1) in _SENTENCE_FINAL), text
+    )
+
+
 # Passes still to come slot in by design.md § Rewrite order: dates and money before ranges,
-# percentages and units between ranges and grouped thousands, abbreviations and acronyms last.
+# acronyms after abbreviations. `year_suffix` is the `r.` abbreviation, taken while the year is
+# still digits.
 PASSES.extend(
     [
         ("ranges", _ranges),
+        ("percentages", _percentages),
+        ("units", _units),
+        ("year_suffix", _year_suffix),
         ("grouped_thousands", _grouped_thousands),
         ("decimals", _decimals),
         ("integers", _integers),
+        ("abbreviations", _abbreviations),
     ]
 )
 

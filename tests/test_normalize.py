@@ -172,3 +172,116 @@ def test_spaced_hyphen_is_not_a_range(language, text, expected):
     out = normalize(text, language)
     assert out == expected
     assert " do " not in out and " to " not in out
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "15%", "piętnaście procent"),
+        ("pl", "1,5 %", "jeden przecinek pięć procent"),
+        ("pl", "wzrost o 15%.", "wzrost o piętnaście procent."),
+        ("en", "15%", "fifteen percent"),
+        ("en", "1.5 %", "one point five percent"),
+        # A bare percent sign is not touched.
+        ("pl", "znak %", "znak %"),
+    ],
+)
+def test_percentages(language, text, expected):
+    assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "5 s", "pięć sekundy"),
+        ("pl", "1 s", "jeden sekundy"),
+        ("pl", "200 ms", "dwieście milisekundy"),
+        ("pl", "3 min", "trzy minuty"),
+        ("pl", "2 h", "dwa godziny"),
+        ("pl", "4 KB", "cztery kilobajty"),
+        ("pl", "16 GB.", "szesnaście gigabajty."),
+        ("pl", "512 MB", "pięćset dwanaście megabajty"),
+        ("pl", "2 TB", "dwa terabajty"),
+        ("pl", "50 Hz", "pięćdziesiąt herce"),
+        ("pl", "44 kHz", "czterdzieści cztery kiloherce"),
+        ("pl", "8 px", "osiem piksele"),
+        ("pl", "1 000 MB", "tysiąc megabajty"),
+        ("en", "1 s", "one second"),
+        ("en", "5 s", "five seconds"),
+        ("en", "1 ms", "one millisecond"),
+        ("en", "3 min", "three minutes"),
+        ("en", "1 h", "one hour"),
+        ("en", "16 GB", "sixteen gigabytes"),
+        ("en", "1 KB", "one kilobyte"),
+        ("en", "2 TB", "two terabytes"),
+        ("en", "50 Hz", "fifty hertz"),
+        ("en", "44 kHz", "forty-four kilohertz"),
+        ("en", "1 px", "one pixel"),
+        ("en", "8 px", "eight pixels"),
+        ("en", "1.5 s", "one point five seconds"),
+        # Units are case-sensitive: `gb` and `S` are not units.
+        ("en", "16 gb", "sixteen gb"),
+        # Unspaced units stay masked as identifiers (Task 1 behaviour).
+        ("pl", "16GB", "16GB"),
+    ],
+)
+def test_units_after_number(language, text, expected):
+    assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text"),
+    [
+        ("pl", "s jak sekunda"),
+        ("pl", "litera h i min"),
+        ("en", "the s in it's and GB in caps"),
+        ("en", "px values"),
+    ],
+)
+def test_unit_letter_without_number_unchanged(language, text):
+    assert normalize(text, language) == text
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "ok. pięć", "około pięć"),
+        ("pl", "np. tak", "na przykład tak"),
+        ("pl", "tj. tak", "to jest tak"),
+        ("pl", "m.in. to", "między innymi to"),
+        ("pl", "jabłka, gruszki itd.", "jabłka, gruszki i tak dalej."),
+        ("pl", "itd. i tak", "i tak dalej i tak"),
+        ("pl", "tzw. bufor", "tak zwany bufor"),
+        ("pl", "godz. 5", "godzina pięć"),
+        ("pl", "w 2026 r. było", "w dwa tysiące dwadzieścia sześć roku było"),
+        ("pl", "To był 2026 r.", "To był dwa tysiące dwadzieścia sześć roku."),
+        # A lone `r.` not after a year stays.
+        ("pl", "punkt r. dalej", "punkt r. dalej"),
+        # Whole tokens only.
+        ("pl", "blok. dalej", "blok. dalej"),
+        ("en", "e.g. this", "for example this"),
+        ("en", "i.e. that", "that is that"),
+        ("en", "approx. 5", "approximately five"),
+        ("en", "React vs. Vue", "React versus Vue"),
+        # Each language uses only its own abbreviations.
+        ("en", "ok. np.", "ok. np."),
+        ("pl", "e.g. vs.", "e.g. vs."),
+    ],
+)
+def test_abbreviations_pl_en(language, text, expected):
+    assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        (
+            "pl",
+            "zajmie ok. 1,2–1,6 s",
+            "zajmie około jeden przecinek dwa do jeden przecinek sześć sekundy",
+        ),
+        ("en", "takes 1.2–1.6 s", "takes one point two to one point six seconds"),
+    ],
+)
+def test_swallowed_sentence_2026_11_05(language, text, expected):
+    assert normalize(text, language) == expected
