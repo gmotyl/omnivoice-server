@@ -12,6 +12,7 @@ dependencies = [
     "soundfile>=0.12",
     "numpy",
     "python-multipart>=0.0.9",
+    "num2words>=0.5.14",
 ]
 
 [tool.uv]
@@ -19,6 +20,11 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
 
 # CUDA 12.8 wheels for torch/torchaudio (RTX 40xx, WSL2 driver >= 570)
 [[tool.uv.index]]
