@@ -52,12 +52,12 @@ pattern consumes its digits before a more general one sees them:
    kHz, px → a fixed word per language. Polish uses the plural form for any number ("sekundy",
    "gigabajty"), following the nominative-only decision. English uses "second" for 1 and
    "seconds" otherwise.
-7. **Decimals**: the Polish comma (`1,2`) and the English point (`1.2`) → `num2words(float)`
+7. **Grouped thousands** (before decimals, so `1 234,5` is one number): `3 100` and `3 100` (non-breaking space) in Polish, `3,100` in English →
+   the digits joined, keeping any decimal part. The pattern requires groups of exactly three digits, so the Polish decimal `1,2`
+   never matches it.
+8. **Decimals**: the Polish comma (`1,2`) and the English point (`1.2`) → `num2words(float)`
    ("jeden przecinek dwa", "one point two"). Digits after the separator are read as a number, as
    num2words does.
-8. **Grouped thousands**: `3 100` and `3 100` (non-breaking space) in Polish, `3,100` in English →
-   one integer. The pattern requires groups of exactly three digits, so the Polish decimal `1,2`
-   never matches it.
 9. **Integers** → cardinal `num2words`.
 10. **Abbreviations** (whole token, with its dot):
    - Polish: ok. → około, np. → na przykład, tj. → to jest, m.in. → między innymi, itd. →
