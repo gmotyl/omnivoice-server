@@ -67,7 +67,7 @@ def normalize(text: str, language: str) -> str: ...
 
 - [x] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
 - [x] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -am "feat(normalize): numbers, decimals, ranges"`
+- [x] **Step 3: Commit** — `git commit -am "feat(normalize): numbers, decimals, ranges"`
 
 ### Task 3: Percentages, units, abbreviations
 
@@ -89,8 +89,8 @@ def normalize(text: str, language: str) -> str: ...
 - "test_abbreviations_pl_en"
 - "test_swallowed_sentence_2026_11_05"
 
-- [ ] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
+- [x] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
 - [ ] **Step 3: Commit** — `git commit -am "feat(normalize): percentages, units, abbreviations"`
 
 ### Task 4: Dates and money
