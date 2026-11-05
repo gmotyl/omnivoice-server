@@ -41,7 +41,7 @@ def normalize(text: str, language: str) -> str: ...
 
 - [x] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
 - [x] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
-- [ ] **Step 3: Commit** — `git add pyproject.toml uv.lock normalize.py tests/test_normalize.py && git commit -m "feat(normalize): module skeleton with protected spans"`
+- [x] **Step 3: Commit** — `git add pyproject.toml uv.lock normalize.py tests/test_normalize.py && git commit -m "feat(normalize): module skeleton with protected spans"`
 
 ### Task 2: Integers, grouped thousands, decimals, ranges
 
@@ -65,8 +65,8 @@ def normalize(text: str, language: str) -> str: ...
 - "test_ranges_en_dash_and_tight_hyphen"
 - "test_spaced_hyphen_is_not_a_range"
 
-- [ ] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
+- [x] **Step 1: Write the failing tests** — Run: test command — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: test command — Expected: PASS
 - [ ] **Step 3: Commit** — `git commit -am "feat(normalize): numbers, decimals, ranges"`
 
 ### Task 3: Percentages, units, abbreviations
