@@ -299,3 +299,212 @@ def test_swallowed_sentence_2026_11_05(language, text, expected):
 )
 def test_all_zero_fraction(language, text, expected):
     assert normalize(text, language) == expected
+
+
+# --- Task 4: dates and money -----------------------------------------------------------------
+
+_PL_DATE = "piąty listopada dwa tysiące dwadzieścia sześć"
+_EN_DATE = "November fifth, twenty twenty-six"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("5.11.2026", _PL_DATE),
+        ("05.11.2026", _PL_DATE),
+        ("2026-11-05", _PL_DATE),
+        ("5 listopada 2026", _PL_DATE),
+        ("Dziś jest 05.11.2026.", f"Dziś jest {_PL_DATE}."),
+        ("1.01.2027", "pierwszy stycznia dwa tysiące dwadzieścia siedem"),
+        ("22 lutego 2026", "dwudziesty drugi lutego dwa tysiące dwadzieścia sześć"),
+        # `r.` after the year is read as "roku", with a sentence-ending dot kept.
+        ("5 listopada 2026 r. było", f"{_PL_DATE} roku było"),
+        ("To było 5.11.2026 r.", f"To było {_PL_DATE} roku."),
+        ("2026-11-05 r. tak", f"{_PL_DATE} roku tak"),
+    ],
+)
+def test_dates_pl(text, expected):
+    assert normalize(text, "pl") == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("2026-11-05", _EN_DATE),
+        ("November 5, 2026", _EN_DATE),
+        ("5 November 2026", _EN_DATE),
+        ("On 2026-11-05, we met.", f"On {_EN_DATE}, we met."),
+        ("January 1, 2027", "January first, twenty twenty-seven"),
+        ("22 February 2026.", "February twenty-second, twenty twenty-six."),
+    ],
+)
+def test_dates_en(text, expected):
+    assert normalize(text, "en") == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "5/11/2026", "pięć/jedenaście/dwa tysiące dwadzieścia sześć"),
+        ("en", "5/11/2026", "five/eleven/two thousand and twenty-six"),
+    ],
+)
+def test_slash_date_not_a_date(language, text, expected):
+    out = normalize(text, language)
+    assert out == expected
+    assert "listopada" not in out and "November" not in out and "fifth" not in out
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "12,50 zł", "dwanaście złotych, pięćdziesiąt groszy"),
+        ("pl", "12,50 PLN", "dwanaście złotych, pięćdziesiąt groszy"),
+        ("pl", "PLN 12,50", "dwanaście złotych, pięćdziesiąt groszy"),
+        ("pl", "Kosztuje 12,50 zł.", "Kosztuje dwanaście złotych, pięćdziesiąt groszy."),
+        ("pl", "1 zł", "jeden złoty"),
+        ("pl", "2 zł", "dwa złote"),
+        ("pl", "5 PLN", "pięć złotych"),
+        ("pl", "12 zł", "dwanaście złotych"),
+        ("pl", "22 zł", "dwadzieścia dwa złote"),
+        ("pl", "1 200 zł", "tysiąc dwieście złotych"),
+        ("pl", "€1", "jeden euro"),
+        ("pl", "2 EUR", "dwa euro"),
+        ("pl", "2,02 €", "dwa euro, dwa centy"),
+        ("pl", "$1", "jeden dolar"),
+        ("pl", "2 USD", "dwa dolary"),
+        ("pl", "USD 5", "pięć dolarów"),
+        ("pl", "12 $", "dwanaście dolarów"),
+        ("pl", "22 USD", "dwadzieścia dwa dolary"),
+        ("en", "$12.50", "twelve dollars, fifty cents"),
+        ("en", "12.50 USD", "twelve dollars, fifty cents"),
+        ("en", "USD 12.50", "twelve dollars, fifty cents"),
+        ("en", "$1", "one dollar"),
+        ("en", "$1.01", "one dollar, one cent"),
+        ("en", "2 USD", "two dollars"),
+        ("en", "1,200 USD", "one thousand, two hundred dollars"),
+        ("en", "€2", "two euro"),
+        ("en", "12 EUR", "twelve euro"),
+        ("en", "£1", "one pound"),
+        ("en", "£3", "three pounds"),
+        ("en", "22 GBP", "twenty-two pounds"),
+        ("en", "It costs $5.", "It costs five dollars."),
+    ],
+)
+def test_money_num2words_currencies(language, text, expected):
+    assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "5 €", "pięć euro"),
+        ("pl", "€5", "pięć euro"),
+        ("pl", "5,00 €", "pięć euro"),
+        ("pl", "5,00 zł", "pięć złotych"),
+        ("en", "£3", "three pounds"),
+        ("en", "3.00 GBP", "three pounds"),
+        ("en", "$5.00", "five dollars"),
+        # A zero major part is dropped too.
+        ("pl", "0,50 zł", "pięćdziesiąt groszy"),
+        ("pl", "0,05 CHF", "pięć centymów"),
+        ("en", "0.50 USD", "fifty cents"),
+    ],
+)
+def test_money_zero_minor_part_dropped(language, text, expected):
+    out = normalize(text, language)
+    assert out == expected
+    assert "zero" not in out
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "199 USD", "sto dziewięćdziesiąt dziewięć dolarów"),
+        ("pl", "$199", "sto dziewięćdziesiąt dziewięć dolarów"),
+        ("en", "199 USD", "one hundred and ninety-nine dollars"),
+        ("en", "$199", "one hundred and ninety-nine dollars"),
+    ],
+)
+def test_money_integer_not_cents(language, text, expected):
+    out = normalize(text, language)
+    assert out == expected
+    assert "amerykańsk" not in out
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # CZK: feminine, so "jedna" and "dwie", including inside compounds.
+        ("1 Kč", "jedna korona"),
+        ("2 Kč", "dwie korony"),
+        ("3 Kč", "trzy korony"),
+        ("5 CZK", "pięć koron"),
+        ("12 Kč", "dwanaście koron"),
+        ("21 Kč", "dwadzieścia jeden koron"),
+        ("22 Kč", "dwadzieścia dwie korony"),
+        ("CZK 22", "dwadzieścia dwie korony"),
+        ("1,50 Kč", "jedna korona, pięćdziesiąt halerzy"),
+        ("12,22 Kč", "dwanaście koron, dwadzieścia dwa halerze"),
+        # CHF.
+        ("1 CHF", "jeden frank"),
+        ("2 CHF", "dwa franki"),
+        ("5 CHF", "pięć franków"),
+        ("12 CHF", "dwanaście franków"),
+        ("20 CHF", "dwadzieścia franków"),
+        ("CHF 22", "dwadzieścia dwa franki"),
+        ("2,01 CHF", "dwa franki, jeden centym"),
+        ("1,05 CHF", "jeden frank, pięć centymów"),
+        # GBP has no Polish num2words forms.
+        ("£1", "jeden funt"),
+        ("£2", "dwa funty"),
+        ("2 £", "dwa funty"),
+        ("5 GBP", "pięć funtów"),
+        ("£12", "dwanaście funtów"),
+        ("GBP 22", "dwadzieścia dwa funty"),
+        ("£2,03", "dwa funty, trzy pensy"),
+        ("£3,00", "trzy funty"),
+    ],
+)
+def test_money_local_table_plural_rule_pl(text, expected):
+    assert normalize(text, "pl") == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("1 CZK", "one koruna"),
+        ("2 CZK", "two korunas"),
+        ("5 Kč", "five korunas"),
+        ("CZK 12", "twelve korunas"),
+        ("22 CZK", "twenty-two korunas"),
+        ("1.01 CZK", "one koruna, one haler"),
+        ("CHF 1", "one franc"),
+        ("2 CHF", "two francs"),
+        ("20 CHF", "twenty francs"),
+        ("1.50 CHF", "one franc, fifty centimes"),
+        ("CHF 2.01", "two francs, one centime"),
+        ("20.00 CHF", "twenty francs"),
+    ],
+)
+def test_money_local_table_en(text, expected):
+    assert normalize(text, "en") == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "10–20 zł", "dziesięć do dwadzieścia złotych"),
+        ("pl", "10-20 zł", "dziesięć do dwadzieścia złotych"),
+        ("pl", "1–2 zł", "jeden do dwa złote"),
+        ("pl", "€10–20", "dziesięć do dwadzieścia euro"),
+        ("pl", "10–22 Kč", "dziesięć do dwadzieścia dwie korony"),
+        ("pl", "3–5 CHF", "trzy do pięć franków"),
+        ("en", "$10–20", "ten to twenty dollars"),
+        ("en", "10-20 USD", "ten to twenty dollars"),
+        ("en", "£1–2", "one to two pounds"),
+        ("en", "1–2 CZK", "one to two korunas"),
+    ],
+)
+def test_money_range(language, text, expected):
+    assert normalize(text, language) == expected

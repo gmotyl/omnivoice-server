@@ -265,6 +265,292 @@ def _integers(text: str, lang: str) -> str:
     return _INTEGER.sub(lambda m: num2words(int(m.group()), lang=lang), text)
 
 
+# --- Dates -----------------------------------------------------------------------------------
+
+_MONTHS_PL_GENITIVE = (
+    "stycznia",
+    "lutego",
+    "marca",
+    "kwietnia",
+    "maja",
+    "czerwca",
+    "lipca",
+    "sierpnia",
+    "września",
+    "października",
+    "listopada",
+    "grudnia",
+)
+_MONTHS_EN = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+# A date is not glued to a word, a number or a dot-, slash- or hyphen-joined chain.
+_DATE_START = r"(?<![\w.,/-])"
+_DATE_END = r"(?![\w/]|[.,][0-9]|-\w)"
+_PL_MONTH_ALT = "|".join(_MONTHS_PL_GENITIVE)
+_EN_MONTH_ALT = "|".join(_MONTHS_EN)
+_ISO_DATE = re.compile(rf"{_DATE_START}({_D}{{4}})-({_D}{{2}})-({_D}{{2}}){_DATE_END}")
+_PL_DOT_DATE = re.compile(rf"{_DATE_START}({_D}{{1,2}})\.({_D}{{1,2}})\.({_D}{{4}}){_DATE_END}")
+_PL_WORD_DATE = re.compile(
+    rf"{_DATE_START}({_D}{{1,2}}){_SPACE}+({_PL_MONTH_ALT}){_SPACE}+({_D}{{4}}){_DATE_END}"
+)
+_EN_MONTH_DAY_DATE = re.compile(
+    rf"(?<!\w)({_EN_MONTH_ALT}){_SPACE}+({_D}{{1,2}}),{_SPACE}*({_D}{{4}}){_DATE_END}"
+)
+_EN_DAY_MONTH_DATE = re.compile(
+    rf"{_DATE_START}({_D}{{1,2}}){_SPACE}+({_EN_MONTH_ALT}){_SPACE}+({_D}{{4}}){_DATE_END}"
+)
+# pl `r.` right after a date's year → "roku".
+_PL_DATE_R = re.compile(rf"{_SPACE}+r\.(?!\w)")
+
+# A match -> (day, month, year).
+DateParts = Callable[[re.Match[str]], tuple[int, int, int]]
+
+
+def _date_words(day: int, month: int, year: int, lang: str) -> str | None:
+    """A date read aloud, or None when the day or month is out of range."""
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return None
+    if lang == "pl":
+        ordinal = num2words(day, lang="pl", to="ordinal")
+        return f"{ordinal} {_MONTHS_PL_GENITIVE[month - 1]} {num2words(year, lang='pl')}"
+    ordinal = num2words(day, lang="en", to="ordinal")
+    return f"{_MONTHS_EN[month - 1]} {ordinal}, {num2words(year, lang='en', to='year')}"
+
+
+def _rewrite_dates(text: str, lang: str, pattern: re.Pattern[str], parts: DateParts) -> str:
+    out: list[str] = []
+    pos = 0
+    for m in pattern.finditer(text):
+        words = _date_words(*parts(m), lang)
+        if words is None:
+            continue  # not a real date: leave it to the number passes
+        end = m.end()
+        if lang == "pl":
+            r = _PL_DATE_R.match(text, end)
+            if r:
+                words += " " + _abbreviation_word(r, "roku", True)
+                end = r.end()
+        out.append(text[pos : m.start()] + words)
+        pos = end
+    out.append(text[pos:])
+    return "".join(out)
+
+
+def _dates(text: str, lang: str) -> str:
+    """pl `5.11.2026`, ISO, `5 listopada 2026`; en ISO, `November 5, 2026`, `5 November 2026`.
+
+    A slash date (`5/11/2026`) is ambiguous and never read as a date.
+    """
+    text = _rewrite_dates(
+        text, lang, _ISO_DATE, lambda m: (int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    )
+    if lang == "pl":
+        text = _rewrite_dates(
+            text, lang, _PL_DOT_DATE, lambda m: (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        )
+        return _rewrite_dates(
+            text,
+            lang,
+            _PL_WORD_DATE,
+            lambda m: (int(m.group(1)), _MONTHS_PL_GENITIVE.index(m.group(2)) + 1, int(m.group(3))),
+        )
+    text = _rewrite_dates(
+        text,
+        lang,
+        _EN_MONTH_DAY_DATE,
+        lambda m: (int(m.group(2)), _MONTHS_EN.index(m.group(1)) + 1, int(m.group(3))),
+    )
+    return _rewrite_dates(
+        text,
+        lang,
+        _EN_DAY_MONTH_DATE,
+        lambda m: (int(m.group(1)), _MONTHS_EN.index(m.group(2)) + 1, int(m.group(3))),
+    )
+
+
+# --- Money -----------------------------------------------------------------------------------
+
+# Written symbol or code -> ISO code.
+_CURRENCY_TOKENS = {
+    "zł": "PLN",
+    "PLN": "PLN",
+    "€": "EUR",
+    "EUR": "EUR",
+    "$": "USD",
+    "USD": "USD",
+    "£": "GBP",
+    "GBP": "GBP",
+    "CHF": "CHF",
+    "Kč": "CZK",
+    "CZK": "CZK",
+}
+_SYMBOLS_BEFORE = ("€", "$", "£")  # symbols written before the amount, glued or spaced
+_CODES_BEFORE = ("PLN", "EUR", "USD", "GBP", "CHF", "CZK")  # codes before, always spaced
+_CUR_AFTER_ALT = "|".join(sorted(map(re.escape, _CURRENCY_TOKENS), key=len, reverse=True))
+_SYM_BEFORE_ALT = "|".join(map(re.escape, _SYMBOLS_BEFORE))
+_CODE_BEFORE_ALT = "|".join(_CODES_BEFORE)
+_CUR_END = r"(?!\w)"
+
+# Currencies num2words declines itself, per language; the rest use `_LOCAL_CURRENCY`.
+_NUM2WORDS_CURRENCIES = {
+    "pl": frozenset({"PLN", "EUR", "USD"}),
+    "en": frozenset({"PLN", "EUR", "USD", "GBP"}),
+}
+
+# Local word forms: (major forms, minor forms, major is feminine).
+# pl forms are (1, 2–4 except 12–14, other); en forms are (1, other).
+_LOCAL_CURRENCY: dict[str, dict[str, tuple[tuple[str, ...], tuple[str, ...], bool]]] = {
+    "pl": {
+        "GBP": (("funt", "funty", "funtów"), ("pens", "pensy", "pensów"), False),
+        "CHF": (("frank", "franki", "franków"), ("centym", "centymy", "centymów"), False),
+        "CZK": (("korona", "korony", "koron"), ("halerz", "halerze", "halerzy"), True),
+    },
+    "en": {
+        "CHF": (("franc", "francs"), ("centime", "centimes"), False),
+        "CZK": (("koruna", "korunas"), ("haler", "halers"), False),
+    },
+}
+
+# num2words extras to shorten: pl "dolarów amerykańskich" → "dolarów", en "pounds sterling".
+_CURRENCY_TRIM = re.compile(r" (?:amerykańsk\w*|sterling)(?=,|$)")
+# num2words always names both parts, even a zero one ("pięć euro, zero centów").
+_ZERO_MINOR = re.compile(r", zero \S+$")
+_ZERO_MAJOR = re.compile(r"^zero \S+, ")
+
+# An amount has at most two decimal places; `1,999 zł` is left to the number passes.
+_MONEY_AMOUNT = {
+    "pl": rf"{_D}{{1,3}}(?:{_PL_GROUP_SEP}{_D}{{3}})+(?:,{_D}{{1,2}})?|{_D}+(?:,{_D}{{1,2}})?",
+    "en": rf"{_D}{{1,3}}(?:,{_D}{{3}})+(?:\.{_D}{{1,2}})?|{_D}+(?:\.{_D}{{1,2}})?",
+}
+_MONEY_RANGE_AFTER = {
+    lang: re.compile(rf"{_NUM_START}({num})[{_DASHES}]({num}){_SPACE}?({_CUR_AFTER_ALT}){_CUR_END}")
+    for lang, num in _MONEY_AMOUNT.items()
+}
+_MONEY_RANGE_BEFORE = {
+    lang: re.compile(
+        rf"(?<!\w)({_SYM_BEFORE_ALT}){_SPACE}?({num})[{_DASHES}](?:{_SYM_BEFORE_ALT})?({num}){_NUM_END}"
+    )
+    for lang, num in _MONEY_AMOUNT.items()
+}
+_MONEY_AFTER = {
+    lang: re.compile(rf"{_NUM_START}({num}){_SPACE}?({_CUR_AFTER_ALT}){_CUR_END}")
+    for lang, num in _MONEY_AMOUNT.items()
+}
+_MONEY_BEFORE = {
+    lang: re.compile(
+        rf"(?<!\w)(?:({_SYM_BEFORE_ALT}){_SPACE}?|({_CODE_BEFORE_ALT}){_SPACE})({num}){_NUM_END}"
+    )
+    for lang, num in _MONEY_AMOUNT.items()
+}
+
+
+def _parse_amount(written: str, lang: str) -> Decimal:
+    if lang == "pl":
+        return Decimal(re.sub(_PL_GROUP_SEP, "", written).replace(",", "."))
+    return Decimal(written.replace(",", ""))
+
+
+def _plural_index(n: int, lang: str) -> int:
+    """Index into a local form tuple: pl 1 / 2–4 (not 12–14) / other; en 1 / other."""
+    if n == 1:
+        return 0
+    if lang == "en":
+        return 1
+    return 1 if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else 2
+
+
+def _cardinal(n: int, lang: str, feminine: bool = False) -> str:
+    """Cardinal words; pl feminine nouns take "jedna" for 1 and "dwie" for a final 2."""
+    words = num2words(n, lang=lang)
+    if lang == "pl" and feminine:
+        if n == 1:
+            return "jedna"
+        if n % 10 == 2 and n % 100 != 12:
+            words = re.sub(r"\bdwa$", "dwie", words)
+    return words
+
+
+def _is_feminine(code: str, lang: str) -> bool:
+    local = _LOCAL_CURRENCY[lang].get(code)
+    return bool(local and local[2])
+
+
+def _amount_words(amount: Decimal, code: str, lang: str) -> str:
+    """An amount in words with its currency; a zero minor or major part is dropped."""
+    amount = amount.quantize(Decimal("0.01"))
+    if code in _NUM2WORDS_CURRENCIES[lang]:
+        # A Decimal, never an int: num2words reads a bare int as minor units (199 → 1.99).
+        words = num2words(amount, lang=lang, to="currency", currency=code)
+        words = _ZERO_MAJOR.sub("", _ZERO_MINOR.sub("", words))
+        return _CURRENCY_TRIM.sub("", words)
+    major_forms, minor_forms, feminine = _LOCAL_CURRENCY[lang][code]
+    major = int(amount)
+    minor = int((amount - major) * 100)
+    parts = []
+    if major or not minor:
+        parts.append(f"{_cardinal(major, lang, feminine)} {major_forms[_plural_index(major, lang)]}")
+    if minor:
+        parts.append(f"{_cardinal(minor, lang)} {minor_forms[_plural_index(minor, lang)]}")
+    return ", ".join(parts)
+
+
+def _currency_word(n: int, code: str, lang: str) -> str:
+    """The currency's name in the form a whole number `n` takes ("złotych" for 20)."""
+    if code in _NUM2WORDS_CURRENCIES[lang]:
+        words = _amount_words(Decimal(n), code, lang)
+        return words.removeprefix(num2words(n, lang=lang) + " ")
+    major_forms, _, _ = _LOCAL_CURRENCY[lang][code]
+    return major_forms[_plural_index(n, lang)]
+
+
+def _range_words(low: str, high: str, code: str, lang: str) -> str:
+    """`10–20 zł` → "dziesięć do dwadzieścia złotych": both numbers nominative, currency once."""
+    feminine = _is_feminine(code, lang)
+
+    def number(written: str) -> str:
+        value = _parse_amount(written, lang)
+        if value == value.to_integral_value():
+            return _cardinal(int(value), lang, feminine)
+        return written  # a decimal bound is read by the decimals pass
+
+    last = _parse_amount(high, lang)
+    # A fractional last bound takes the "many" form, like 5.
+    form_n = int(last) if last == last.to_integral_value() else 5
+    return f"{number(low)} {_RANGE_WORD[lang]} {number(high)} {_currency_word(form_n, code, lang)}"
+
+
+def _money(text: str, lang: str) -> str:
+    """`12,50 zł`, `$12.50`, `€5`, `20 CHF`, `10–20 zł` → amounts in words."""
+    tokens = _CURRENCY_TOKENS
+    text = _MONEY_RANGE_AFTER[lang].sub(
+        lambda m: _range_words(m.group(1), m.group(2), tokens[m.group(3)], lang), text
+    )
+    text = _MONEY_RANGE_BEFORE[lang].sub(
+        lambda m: _range_words(m.group(2), m.group(3), tokens[m.group(1)], lang), text
+    )
+    text = _MONEY_AFTER[lang].sub(
+        lambda m: _amount_words(_parse_amount(m.group(1), lang), tokens[m.group(2)], lang), text
+    )
+    return _MONEY_BEFORE[lang].sub(
+        lambda m: _amount_words(
+            _parse_amount(m.group(3), lang), tokens[m.group(1) or m.group(2)], lang
+        ),
+        text,
+    )
+
+
 # --- Abbreviations -----------------------------------------------------------------------
 
 ABBREVIATIONS["pl"].update(
@@ -304,11 +590,13 @@ def _abbreviations(text: str, lang: str) -> str:
     )
 
 
-# Passes still to come slot in by design.md § Rewrite order: dates and money before ranges,
-# acronyms after abbreviations. `year_suffix` is the `r.` abbreviation, taken while the year is
-# still digits.
+# Passes still to come slot in by design.md § Rewrite order: acronyms after abbreviations.
+# `year_suffix` is the `r.` abbreviation, taken while the year is still digits; a date's `r.` is
+# taken by the dates pass itself.
 PASSES.extend(
     [
+        ("dates", _dates),
+        ("money", _money),
         ("ranges", _ranges),
         ("percentages", _percentages),
         ("units", _units),
