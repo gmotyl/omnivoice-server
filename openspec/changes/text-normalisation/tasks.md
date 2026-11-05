@@ -173,9 +173,9 @@ def normalize(text: str, language: str) -> str: ...
 - "test_speech_other_language_unchanged"
 - "test_speech_switch_off"
 
-- [ ] **Step 1: Write the failing tests** — Run: `.venv/bin/python -m pytest tests/test_speech_normalize.py -q` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `.venv/bin/python -m pytest -q` — Expected: PASS
-- [ ] **Step 3: Commit** — `git add server.py tests/test_speech_normalize.py && git commit -m "feat(server): normalise pl/en text before synthesis"`
+- [x] **Step 1: Write the failing tests** — Run: `.venv/bin/python -m pytest tests/test_speech_normalize.py -q` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `.venv/bin/python -m pytest -q` — Expected: PASS
+- [x] **Step 3: Commit** — `git add server.py tests/test_speech_normalize.py && git commit -m "feat(server): normalise pl/en text before synthesis"`
 
 ### Task 7: Verification sentences and listening page
 
@@ -199,5 +199,5 @@ def normalize(text: str, language: str) -> str: ...
 
 **Verification: non-testable** — Run: `grep -n "OMNIVOICE_NORMALIZE" README.md server.py` — Expected: documented in both, with the pl/en scope and the off switch.
 
-- [ ] **Step 1:** update README
-- [ ] **Step 2: Commit** — `git commit -am "docs: text normalisation"`
+- [x] **Step 1:** update README
+- [x] **Step 2: Commit** — `git commit -am "docs: text normalisation"`
