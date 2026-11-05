@@ -654,6 +654,9 @@ _PL_LETTER_NAMES = dict(
 # A whole token of 2-5 ASCII capitals with an optional plural `s`. Not glued to a letter, digit,
 # underscore or hyphen on either side (`MyAPI`, `API_KEY`, `COVID-19` stay as written).
 _ACRONYM = re.compile(r"(?<![\w-])([A-Z]{2,5})(s?)(?![\w-])")
+# A Roman numeral of I, V and X only (`II`, `IV`, `XXI`, `XIV`): left as written, not spelled.
+# Tokens with C, D, L or M (`CD`, `CV`, `MI`) are far likelier acronyms, so they are still spelled.
+_ROMAN_NUMERAL = re.compile(r"X{0,3}(?:IX|IV|V?I{0,3})")
 
 
 def _pl_plural(name: str) -> str:
@@ -676,7 +679,7 @@ def _acronyms(text: str, lang: str) -> str:
 
     def spell(m: re.Match[str]) -> str:
         letters, plural = m.group(1), m.group(2)
-        if letters in keep:
+        if letters in keep or (not plural and _ROMAN_NUMERAL.fullmatch(letters)):
             return m.group()
         if lang == "en":
             return " ".join(letters) + plural

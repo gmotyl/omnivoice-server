@@ -599,6 +599,30 @@ def test_read_as_word_acronyms_unchanged(language, text):
     assert normalize(text, language) == text
 
 
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "XX wiek", "XX wiek"),
+        ("pl", "Karol III", "Karol III"),
+        ("pl", "Rozdział IV", "Rozdział IV"),
+        ("pl", "XXI wiek i XIV rozdział, tom VI.", "XXI wiek i XIV rozdział, tom VI."),
+        ("en", "World War II", "World War II"),
+        ("en", "Chapter XIV", "Chapter XIV"),
+        ("en", "the XXI century", "the XXI century"),
+        # Guards: tokens with C, D, L or M, or not a valid numeral, are still spelled.
+        ("pl", "CV", "ce fau"),
+        ("pl", "CI/CD", "ce i/ce de"),
+        ("pl", "MI", "em i"),
+        ("pl", "DC", "de ce"),
+        ("pl", "IIV", "i i fau"),
+        ("en", "CV", "C V"),
+        ("en", "CI/CD", "C I/C D"),
+    ],
+)
+def test_roman_numerals_unchanged(language, text, expected):
+    assert normalize(text, language) == expected
+
+
 @pytest.mark.parametrize("language", ["pl", "en"])
 @pytest.mark.parametrize(
     "text",
