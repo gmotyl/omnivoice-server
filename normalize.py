@@ -574,20 +574,48 @@ ABBREVIATIONS["en"].update(
 )
 # Abbreviations that commonly close a sentence, so a capital after them means a new sentence.
 _SENTENCE_FINAL = frozenset({"itd."})
+# Capitalised forms that are also standalone words (`Ok.` the interjection): expanded only when
+# the sentence goes on in lowercase or with a number (`Ok. pięć osób`).
+_CAPITALISED_NEEDS_CONTINUATION = frozenset({"ok."})
+
+
+def _capitalise(word: str) -> str:
+    return word[:1].upper() + word[1:]
+
+
 _ABBREVIATION = {
     lang: re.compile(
-        r"(?<![\w.])(" + "|".join(sorted(map(re.escape, table), key=len, reverse=True)) + r")(?!\w)"
+        r"(?<![\w.])("
+        + "|".join(
+            sorted(
+                (re.escape(form) for key in table for form in (key, _capitalise(key))),
+                key=len,
+                reverse=True,
+            )
+        )
+        + r")(?!\w)"
     )
     for lang, table in ABBREVIATIONS.items()
 }
 
 
 def _abbreviations(text: str, lang: str) -> str:
-    """`ok.` → `około`; a dot that also ends the sentence is kept."""
+    """`ok.` → `około`, `Np.` → `Na przykład`; a dot that also ends the sentence is kept."""
     table = ABBREVIATIONS[lang]
-    return _ABBREVIATION[lang].sub(
-        lambda m: _abbreviation_word(m, table[m.group(1)], m.group(1) in _SENTENCE_FINAL), text
-    )
+
+    def expand(m: re.Match[str]) -> str:
+        written = m.group(1)
+        key = written if written in table else written[:1].lower() + written[1:]
+        word = table[key]
+        if written != key:
+            if key in _CAPITALISED_NEEDS_CONTINUATION and not re.match(
+                r"[ \t]+[a-ząćęłńóśźż0-9]", text[m.end() :]
+            ):
+                return written
+            word = _capitalise(word)
+        return _abbreviation_word(m, word, key in _SENTENCE_FINAL)
+
+    return _ABBREVIATION[lang].sub(expand, text)
 
 
 # Passes still to come slot in by design.md § Rewrite order: acronyms after abbreviations.

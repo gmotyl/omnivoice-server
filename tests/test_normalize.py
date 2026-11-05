@@ -508,3 +508,20 @@ def test_money_local_table_en(text, expected):
 )
 def test_money_range(language, text, expected):
     assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("pl", "Np. to", "Na przykład to"),
+        ("pl", "M.in. to", "Między innymi to"),
+        ("pl", "Ok. 5 osób", "Około pięć osób"),
+        ("pl", "Było fajnie. Np. wczoraj.", "Było fajnie. Na przykład wczoraj."),
+        ("en", "E.g. this", "For example this"),
+        ("en", "I.e. this", "That is this"),
+        # `Ok.` as a standalone interjection (a new sentence follows) is not "Około".
+        ("pl", "Ok. Zrobię to.", "Ok. Zrobię to."),
+    ],
+)
+def test_capitalised_abbreviations(language, text, expected):
+    assert normalize(text, language) == expected
