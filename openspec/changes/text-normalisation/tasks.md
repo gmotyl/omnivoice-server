@@ -188,9 +188,9 @@ def normalize(text: str, language: str) -> str: ...
 - `normalize_sentences.txt`: at least 6 PL and 6 EN sentences covering integers, decimals, ranges, percentages, units, dates, money in both symbol positions, abbreviations, acronyms (spelled and read-as-word) and one protected identifier; it includes the 2026-11-05 swallowed sentence.
 - `normalize_ab.py` renders the baseline against a server started with `OMNIVOICE_NORMALIZE=0`, then restarts it with the default and renders the normalised run. The switch is read once at import, so it cannot be flipped per request. The script records the normalised text by calling `normalize.normalize` directly.
 
-- [ ] **Step 1:** write the sentences and the script; run it — Expected: page written, lengths as above
+- [x] **Step 1:** write the sentences and the script; run it — Expected: page written, lengths as above
 - [ ] **Step 2:** user listens and confirms — Expected: no swallowed words
-- [ ] **Step 3: Commit** — omnivoice-server: `git add audition/normalize_sentences.txt audition/normalize_ab.py && git commit -m "test(audition): normalisation A/B sentences"`; workspace repo: commit the mockup on `main`
+- [x] **Step 3: Commit** — omnivoice-server: `git add audition/normalize_sentences.txt audition/normalize_ab.py && git commit -m "test(audition): normalisation A/B sentences"`; workspace repo: commit the mockup on `main`
 
 ### Task 8: README
 
