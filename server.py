@@ -18,6 +18,7 @@ Voices:
 Env: OMNIVOICE_HOST (127.0.0.1), OMNIVOICE_PORT (8890), OMNIVOICE_STEPS (16),
      OMNIVOICE_DEVICE (cuda:0), OMNIVOICE_DEFAULT_VOICE (auto),
      OMNIVOICE_VOICES_DIR (voices), OMNIVOICE_CUSTOM_DIR (voices-custom); relative to this file
+     OMNIVOICE_NORMALIZE (on): spell out numbers/units for pl/en before synthesis; 0/false/off disable
 """
 
 from __future__ import annotations
@@ -44,6 +45,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from omnivoice import OmniVoice, VoiceClonePrompt
 from pydantic import BaseModel, Field
 
+from normalize import normalize
+
 SR = 24000
 ROOT = Path(__file__).parent
 HOST = os.environ.get("OMNIVOICE_HOST", "127.0.0.1")
@@ -51,6 +54,14 @@ PORT = int(os.environ.get("OMNIVOICE_PORT", "8890"))
 STEPS = int(os.environ.get("OMNIVOICE_STEPS", "16"))
 DEVICE = os.environ.get("OMNIVOICE_DEVICE", "cuda:0")
 DEFAULT_VOICE = os.environ.get("OMNIVOICE_DEFAULT_VOICE", "auto")
+
+
+def _env_flag(var: str) -> bool:
+    """A default-on switch: only 0, false or off (any case) turn it off."""
+    return os.environ.get(var, "").strip().lower() not in ("0", "false", "off")
+
+
+NORMALIZE_ENABLED = _env_flag("OMNIVOICE_NORMALIZE")  # read once at import
 
 MEDIA_TYPES = {
     "wav": "audio/wav",
@@ -181,6 +192,9 @@ def build_kwargs(req: SpeechRequest) -> dict:
         language = language or v.language
     if language:
         kwargs["language"] = language
+        if NORMALIZE_ENABLED:
+            # normalize() leaves anything but pl/en untouched and reduces pl-PL -> pl itself
+            kwargs["text"] = normalize(req.input, language)
     return kwargs
 
 
