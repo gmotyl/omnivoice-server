@@ -4,9 +4,10 @@
 
 OMNIVOICE_NORMALIZE is read once at server import, so it cannot be flipped per request: the
 script restarts the live server through ./omnivoicectl with OMNIVOICE_NORMALIZE=0 (baseline),
-renders every sentence of audition/normalize_sentences.txt, restarts it with the default
-(normalisation on) and renders them again. Whatever happens, the server is left running in the
-default config. Each request asks for 16 steps. The normalised text shown on the page comes
+renders every sentence of audition/normalize_sentences.txt, restarts it with
+OMNIVOICE_NORMALIZE=1 and renders them again. The flag is always set explicitly, never unset:
+omnivoicectl fills unset variables from relay.env, which could otherwise decide either run.
+Whatever happens, the server is left running with normalisation on. Each request asks for 16 steps. The normalised text shown on the page comes
 from calling normalize.normalize directly. Audio is embedded as MP3 data URIs, so the page is
 one self-contained file.
 """
@@ -32,8 +33,12 @@ sys.path.insert(0, str(ROOT))
 from normalize import normalize
 
 SENTENCES = HERE / "normalize_sentences.txt"
-DEFAULT_OUT = Path(
-    "/srv/git/prv/projects/projects/tts-providers/mockups/2026-11-05-omnivoice-normalize-ab.html"
+# The author's workspace mockups dir when it exists, otherwise the gitignored out/ in this repo.
+_WORKSPACE_MOCKUPS = Path("/srv/git/prv/projects/projects/tts-providers/mockups")
+DEFAULT_OUT = (
+    _WORKSPACE_MOCKUPS / "2026-11-05-omnivoice-normalize-ab.html"
+    if _WORKSPACE_MOCKUPS.is_dir()
+    else ROOT / "out" / "normalize-ab.html"
 )
 URL = f"http://127.0.0.1:{os.environ.get('OMNIVOICE_PORT', '8890')}"
 VOICES = {"pl": "krystyna1", "en": "en-male"}
@@ -81,14 +86,13 @@ def server_env_flag() -> str | None:
 
 
 def restart(normalize_off: bool) -> None:
-    env = {k: v for k, v in os.environ.items() if k != "OMNIVOICE_NORMALIZE"}
-    if normalize_off:
-        env["OMNIVOICE_NORMALIZE"] = "0"
-    print(f"restart: OMNIVOICE_NORMALIZE={'0' if normalize_off else '(default)'}", flush=True)
+    # Set, never unset: a variable already in the environment wins over relay.env.
+    expected = "0" if normalize_off else "1"
+    env = {**os.environ, "OMNIVOICE_NORMALIZE": expected}
+    print(f"restart: OMNIVOICE_NORMALIZE={expected}", flush=True)
     subprocess.run([str(ROOT / "omnivoicectl"), "restart"], env=env, check=True)
     wait_healthy()
     seen = server_env_flag()
-    expected = "0" if normalize_off else None
     if seen != expected:
         raise RuntimeError(f"server runs with OMNIVOICE_NORMALIZE={seen!r}, expected {expected!r}")
 
@@ -147,7 +151,7 @@ def page(rows: list[tuple[str, str, str, dict, dict]]) -> str:
         "vertical-align:top}audio{width:100%;max-width:260px;margin-top:4px}.m{color:var(--mut)}code{font-size:13px}</style>\n"
         "<h1>Normalizacja tekstu: bez vs z</h1>\n"
         f"<p class=m>Każde zdanie wyrenderowane na <code>{VOICES['pl']}</code> (pl) i <code>{VOICES['en']}</code> (en), "
-        f"{STEPS} kroków: najpierw serwer z <code>OMNIVOICE_NORMALIZE=0</code>, potem z domyślnym ustawieniem. "
+        f"{STEPS} kroków: najpierw serwer z <code>OMNIVOICE_NORMALIZE=0</code>, potem z <code>OMNIVOICE_NORMALIZE=1</code>. "
         "Pod zdaniem: tekst po normalizacji (z <code>normalize.normalize</code>).</p>\n"
         "<table><tr><th>Zdanie → po normalizacji</th><th>Bez normalizacji</th><th>Z normalizacją</th></tr>\n"
         + "\n".join(body)
@@ -157,7 +161,9 @@ def page(rows: list[tuple[str, str, str, dict, dict]]) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument(
+        "--out", type=Path, default=DEFAULT_OUT, help=f"listening page (default: {DEFAULT_OUT})"
+    )
     args = ap.parse_args()
 
     sentences = load_sentences()
@@ -180,6 +186,7 @@ def main() -> None:
             restart(normalize_off=False)
 
     rows = [(lang, text, norm, r, n) for (lang, text), norm, r, n in zip(sentences, normalised, raw, nrm, strict=True)]
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(page(rows), encoding="utf-8")
     print(f"\n{'raw':>6} {'norm':>6}  sentence")
     for lang, text, _, r, n in rows:
