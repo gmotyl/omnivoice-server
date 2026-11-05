@@ -347,6 +347,43 @@ def test_dates_en(text, expected):
 @pytest.mark.parametrize(
     ("language", "text", "expected"),
     [
+        ("pl", "29.02.2028", "dwudziesty dziewiąty lutego dwa tysiące dwadzieścia osiem"),
+        ("pl", "2028-02-29", "dwudziesty dziewiąty lutego dwa tysiące dwadzieścia osiem"),
+        ("pl", "29 lutego 2028", "dwudziesty dziewiąty lutego dwa tysiące dwadzieścia osiem"),
+        ("en", "2028-02-29", "February twenty-ninth, twenty twenty-eight"),
+        ("en", "February 29, 2028", "February twenty-ninth, twenty twenty-eight"),
+        ("en", "29 February 2028", "February twenty-ninth, twenty twenty-eight"),
+    ],
+)
+def test_leap_day_is_a_date(language, text, expected):
+    assert normalize(text, language) == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "date_word"),
+    [
+        ("pl", "31.02.2026", "lutego"),
+        ("pl", "31.04.2026", "kwietnia"),
+        ("pl", "29.02.2026", "lutego"),
+        ("pl", "2026-02-30", "lutego"),
+        ("pl", "2026-04-31", "kwietnia"),
+        ("pl", "31 kwietnia 2026", "trzydziesty pierwszy"),
+        ("pl", "29 lutego 2026", "dwudziesty dziewiąty"),
+        ("en", "2026-02-29", "February"),
+        ("en", "2026-06-31", "June"),
+        ("en", "February 30, 2026", "thirtieth"),
+        ("en", "31 April 2026", "thirty-first"),
+    ],
+)
+def test_impossible_calendar_date_not_a_date(language, text, date_word):
+    out = normalize(text, language)
+    assert date_word not in out
+    assert not any(ch.isdigit() for ch in out)  # the number passes still read the digits
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
         ("pl", "5/11/2026", "pięć/jedenaście/dwa tysiące dwadzieścia sześć"),
         ("en", "5/11/2026", "five/eleven/two thousand and twenty-six"),
     ],

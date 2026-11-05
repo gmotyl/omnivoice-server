@@ -9,6 +9,7 @@ See openspec/changes/text-normalisation/design.md § Rewrite order for the pass 
 
 from __future__ import annotations
 
+import datetime
 import logging
 import re
 from collections.abc import Callable
@@ -319,8 +320,10 @@ DateParts = Callable[[re.Match[str]], tuple[int, int, int]]
 
 
 def _date_words(day: int, month: int, year: int, lang: str) -> str | None:
-    """A date read aloud, or None when the day or month is out of range."""
-    if not (1 <= month <= 12 and 1 <= day <= 31):
+    """A date read aloud, or None when it is not a real calendar date (31.02, 29.02.2026)."""
+    try:
+        datetime.date(year, month, day)
+    except ValueError:
         return None
     if lang == "pl":
         ordinal = num2words(day, lang="pl", to="ordinal")
