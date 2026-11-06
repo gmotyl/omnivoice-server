@@ -19,6 +19,8 @@ Env: OMNIVOICE_HOST (127.0.0.1), OMNIVOICE_PORT (8890), OMNIVOICE_STEPS (16),
      OMNIVOICE_DEVICE (cuda:0), OMNIVOICE_DEFAULT_VOICE (auto),
      OMNIVOICE_VOICES_DIR (voices), OMNIVOICE_CUSTOM_DIR (voices-custom); relative to this file
      OMNIVOICE_NORMALIZE (on): spell out numbers/units for pl/en before synthesis; 0/false/off disable
+     OMNIVOICE_SPEED (0.9): speed used when a request sends none; at 1.0 the model's duration
+       estimate is too tight for several voices and it drops words, 0.9 gives it headroom
 """
 
 from __future__ import annotations
@@ -52,6 +54,7 @@ ROOT = Path(__file__).parent
 HOST = os.environ.get("OMNIVOICE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("OMNIVOICE_PORT", "8890"))
 STEPS = int(os.environ.get("OMNIVOICE_STEPS", "16"))
+DEFAULT_SPEED = float(os.environ.get("OMNIVOICE_SPEED", "0.9"))
 DEVICE = os.environ.get("OMNIVOICE_DEVICE", "cuda:0")
 DEFAULT_VOICE = os.environ.get("OMNIVOICE_DEFAULT_VOICE", "auto")
 
@@ -179,8 +182,9 @@ def encode(audio: np.ndarray, fmt: str) -> bytes:
 def build_kwargs(req: SpeechRequest) -> dict:
     voice = req.voice or DEFAULT_VOICE
     kwargs: dict = {"text": req.input, "num_step": req.num_step or STEPS}
-    if req.speed:
-        kwargs["speed"] = req.speed
+    speed = req.speed or DEFAULT_SPEED
+    if speed != 1.0:
+        kwargs["speed"] = speed
     language = req.language
     if voice.startswith("design:"):
         kwargs["instruct"] = voice.removeprefix("design:").strip()

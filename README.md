@@ -48,7 +48,9 @@ command = /bin/sh -c "...; /path/to/omnivoice-server/omnivoicectl start >/dev/nu
 Env: `OMNIVOICE_HOST` (127.0.0.1), `OMNIVOICE_PORT` (8890), `OMNIVOICE_STEPS` (16),
 `OMNIVOICE_DEVICE` (cuda:0), `OMNIVOICE_DEFAULT_VOICE` (auto), `OMNIVOICE_VOICES_DIR` (voices),
 `OMNIVOICE_CUSTOM_DIR` (voices-custom), `OMNIVOICE_NORMALIZE` (on; `0`, `false` or `off` turns
-[text normalisation](#text-normalisation) off). Relative dirs resolve against the repo root.
+[text normalisation](#text-normalisation) off), `OMNIVOICE_SPEED` (0.9; the speed used when a
+request sends none — at 1.0 several voices drop words because the duration estimate is too
+tight). Relative dirs resolve against the repo root.
 
 `start` also starts the browser relay (next section) and `stop` stops both. If something already
 answers `/health` on `OMNIVOICE_PORT` without this ctl's pid file (another clone, a hand-started
