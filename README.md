@@ -137,6 +137,55 @@ browser; `{"ok":true}` means relay and server are both up. From SPOCK itself:
 curl -s -H 'Origin: https://motyl.dev' http://127.0.0.1:8891/health
 ```
 
+## Narrate / Read Aloud adapter
+
+`narrate/` is a second small Node process in front of the relay for browser extensions that speak
+their own protocol instead of anytts:
+
+- **Narrate** (Chrome extension, reads the open article): `GET /config` lists voices,
+  `WS /stream?voice=<id>` streams PCM16 mono 24 kHz, `POST /download` returns an mp3.
+- **Read Aloud** and other OpenAI-compatible clients: `GET /v1/models`, `GET /v1/audio/voices`,
+  `POST /v1/audio/speech`.
+
+It splits text into sentence-aligned pieces, asks the relay for each (prefetching one ahead) and
+answers `GET /health` with `{"ok":true}` while it runs. It allows any origin (CORS `*`): like the
+relay it listens on loopback only, so `tailscale serve` decides who can reach it.
+
+One-time setup:
+
+```bash
+cd narrate && npm install && cd ..
+tailscale serve --bg --https=8444 8892       # https://<host>.<tailnet>.ts.net:8444 -> 127.0.0.1:8892
+./omnivoicectl start                         # server, then relay, then the adapter
+./omnivoicectl status                        # includes the adapter and its :8444 mapping
+```
+
+`start`, `stop`, `status` and the pid-file rules work for the adapter exactly as for the relay
+(`run/narrate.pid`, `logs/narrate.log`, `./omnivoicectl narrate-log`); it runs on the same node
+(`RELAY_NODE`). When something else already answers on its port, `start` leaves it alone. Env, also
+read from `relay.env`:
+
+| Variable                   | Default     | Notes                                                       |
+| -------------------------- | ----------- | ----------------------------------------------------------- |
+| `NARRATE_HOST`             | `127.0.0.1` | keep it on loopback                                         |
+| `NARRATE_PORT`             | `8892`      | the port `tailscale serve` points at                        |
+| `NARRATE_SERVE_HTTPS_PORT` | `8444`      | the tailnet HTTPS port `status` expects to map to the adapter |
+
+## Tailnet URLs
+
+With both mappings in place, any device on the tailnet uses these (`<host>.<tailnet>.ts.net` is
+the machine's MagicDNS name, see `tailscale status`):
+
+| Client                                   | URL to enter                                  |
+| ---------------------------------------- | --------------------------------------------- |
+| anytts in a browser page (e.g. motyl.dev) | `https://<host>.<tailnet>.ts.net:8443` (relay; origin must be in `RELAY_ALLOWED_ORIGINS`) |
+| Narrate (Chrome), "Server URL"           | `https://<host>.<tailnet>.ts.net:8444`        |
+| Read Aloud / OpenAI-compatible, base URL | `https://<host>.<tailnet>.ts.net:8444/v1`     |
+| Health check                             | `https://<host>.<tailnet>.ts.net:8443/health` (relay + server), `:8444/health` (adapter) |
+
+On the host itself the tailnet URL works too, and so does plain `http://localhost:8892`
+(WSL forwards localhost to Windows).
+
 ## Voices: bundled and custom
 
 Each voice is `<name>.pt` (the saved `VoiceClonePrompt`), `<name>.wav` (its reference clip) and
