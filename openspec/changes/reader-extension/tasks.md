@@ -119,9 +119,9 @@ export function cutPieces(text, max = 400) // → string[] cut at the last space
 - "skips empty, hidden and script blocks"
 - "cuts long sentences into pieces at spaces"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -m "feat(extension): sentence and paragraph segmentation"`
+- [x] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -m "feat(extension): sentence and paragraph segmentation"`
 
 ### Task 4: Reading sources
 
