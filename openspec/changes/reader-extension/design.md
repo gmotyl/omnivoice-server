@@ -125,7 +125,7 @@ stateDiagram-v2
 
 - **What it is**: one paragraph and the feature list (article, selection, Alt+click, sentence and
   paragraph navigation, highlight, voice, speed).
-- **Requirements**: Chrome or Edge with MV3 and the CSS Custom Highlight API (Chrome/Edge 105+),
+- **Requirements**: Chrome or Edge with MV3 and the CSS Custom Highlight API (Chrome/Edge 116+: offscreen documents need 109+, `chrome.runtime.getContexts` 116+),
   Node 22+ to build, and an OpenAI-compatible TTS server — by default our adapter
   (`./omnivoicectl start`, `http://localhost:8892/v1`, see the top-level README § Narrate / Read
   Aloud adapter); `https://api.openai.com/v1` with a key works too.

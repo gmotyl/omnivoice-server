@@ -9,7 +9,8 @@ spoken is highlighted and scrolled into view, and a small player bar sits on top
 
 - **Article**: finds the main article (Readability, falling back to `<body>`) and reads it from
   the top.
-- **Selection**: reads exactly the selected text, then ends the session.
+- **Selection**: reads exactly the selected text; the player stops at the end, the bar stays
+  until **Close**, and Alt+click starts reading again.
 - **Read from here**: starts at the paragraph you right-clicked.
 - **Alt+click**: jumps to any paragraph while reading (or starts again there after reading
   finished, until the bar is closed).
@@ -23,7 +24,8 @@ prefetched while the current one plays.
 
 ## Requirements
 
-- Chrome or Edge 105+ (Manifest V3 and the CSS Custom Highlight API).
+- Chrome or Edge 116+ (`minimum_chrome_version` in the manifest: the offscreen document API needs
+  109+, `chrome.runtime.getContexts` 116+; the CSS Custom Highlight API 105+).
 - Node 22+ and npm to build.
 - An OpenAI-compatible TTS server. The default is our adapter on `http://localhost:8892/v1`,
   started with `./omnivoicectl start` from the repository root (see the top-level
@@ -108,8 +110,9 @@ To change the shortcut, open `chrome://extensions/shortcuts` (`edge://extensions
 - **Nothing happens on click**: browsers block scripting on `chrome://` / `edge://` pages and the
   Chrome Web Store / Edge Add-ons pages; the extension cannot read there.
 - **Resuming after a long pause**: Chrome closes the hidden audio (offscreen) document about 30 s
-  after sound stops. The extension recreates it on resume, seek or a voice/speed change, so a
-  pause longer than that resumes from the start of the current sentence rather than mid-sentence.
+  after sound stops. The extension recreates it on resume or seek (and on a voice / speed change
+  while loading or playing; while paused the change is kept for the next resume), so a pause
+  longer than that resumes from the start of the current sentence rather than mid-sentence.
 - **Old behaviour after a rebuild**: reload the extension on `chrome://extensions` /
   `edge://extensions`, then reload the page.
 - **Shortcut does nothing**: another extension may own `Alt+Shift+R`; check
@@ -160,9 +163,10 @@ service worker; the worker re-sends engine commands to the offscreen document st
 | `set-voice`                  | content → sw → offscreen  | `{voice}`                                                     |
 | `sentence-start`             | offscreen → sw → content  | `{index}`                                                     |
 | `state`                      | offscreen → sw → content  | `{state: "loading"\|"playing"\|"paused"\|"idle"\|"error", error?}` |
+| `stop`                       | sw → content              | — (to the previous owner tab when another tab starts; content tears down without echoing) |
 | `toggle`                     | sw → content              | — (shortcut on the reading tab)                               |
 | `start`                      | sw → content              | `{source: "auto"\|"selection"\|"from-here", linkUrl?, srcUrl?}` |
-| `list-voices`                | content → sw              | — ; answered via `sendResponse` with `{ok, voices}` or `{ok: false, error}` |
+| `list-voices`                | content → sw              | — ; answered via `sendResponse` with `{ok, voices: string[] \| null}` (`null`: reachable, no list) or `{ok: false, error}` |
 | `open-options`               | content → sw              | — (content scripts cannot open the options page)              |
 
 The spec lives in `openspec/changes/reader-extension/` while the change is open, and in
