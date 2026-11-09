@@ -114,9 +114,28 @@ export function initOptions({
     e.preventDefault();
     page.saving = save();
   });
+  // Tests the form's (possibly unsaved) values; a non-local URL needs its host permission first.
+  async function testConnection(values, permission) {
+    if (permission && !(await Promise.resolve(permission.request).catch(() => false))) {
+      setText(status, `Connection not tested: permission to reach ${permission.origin} was denied.`, "error");
+      return;
+    }
+    await checkConnection({ ...values, speed: clampSpeed(values.speed) });
+  }
+
   $("test").addEventListener("click", () => {
     const values = readForm();
-    page.saving = checkConnection({ ...values, speed: clampSpeed(values.speed) });
+    let origin;
+    try {
+      origin = permissionOrigin(values.baseUrl);
+    } catch (err) {
+      setText(status, `Connection not tested: ${err?.message || "invalid base URL"}`, "error");
+      page.saving = Promise.resolve();
+      return;
+    }
+    // Requested synchronously, while the click still counts as a user gesture.
+    const permission = origin && { origin, request: chrome.permissions.request({ origins: [`${origin}/*`] }) };
+    page.saving = testConnection(values, permission);
   });
 
   page.ready = (async () => {

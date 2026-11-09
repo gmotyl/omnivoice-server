@@ -122,3 +122,36 @@ test("denied permission does not save", async () => {
   assert.match(document.getElementById("message").textContent, /permission/i);
   assert.match(document.getElementById("message").textContent, /tts\.example\.com/);
 });
+
+const clickTest = (document) =>
+  document.getElementById("test").dispatchEvent(new document.defaultView.Event("click", { bubbles: true }));
+
+test("test connection requests host permission for an unsaved non-local url", async () => {
+  const { document, chrome, calls, page } = await setup({ voices: { ok: true, voices: ["anna"] } });
+  document.getElementById("baseUrl").value = "https://tts.example.com/v1";
+  clickTest(document);
+  // Asked synchronously, inside the click's user gesture.
+  assert.deepEqual(chrome.requests, [{ origins: ["https://tts.example.com/*"] }]);
+  await page.saving;
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].baseUrl, "https://tts.example.com/v1");
+  assert.equal(chrome.writes.length, 0);
+});
+
+test("test connection with denied permission says so and does not call the engine", async () => {
+  const { document, chrome, calls, page } = await setup({ grant: false, voices: { ok: true, voices: ["anna"] } });
+  document.getElementById("baseUrl").value = "https://tts.example.com/v1";
+  clickTest(document);
+  await page.saving;
+  assert.equal(chrome.requests.length, 1);
+  assert.equal(calls.length, 1);
+  assert.match(status(document), /permission/i);
+  assert.match(status(document), /tts\.example\.com/);
+
+  // A local URL needs no permission and is tested directly.
+  document.getElementById("baseUrl").value = "http://localhost:9000/v1";
+  clickTest(document);
+  await page.saving;
+  assert.equal(chrome.requests.length, 1);
+  assert.equal(calls.length, 2);
+});
