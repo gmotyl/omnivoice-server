@@ -515,6 +515,31 @@ test('alt+click outside the current source starts reading that pane', async () =
   assert.equal(ofType(t.chrome.sent, 'seek').length, 0);
 });
 
+test('alt+click inside a whole-page session narrows to the clicked pane', async () => {
+  // Toolbar start on an app page: Readability finds no article, the whole page is read.
+  const t = slackSetup('t2');
+  const c = install(t.win, t.deps);
+  await c.handle({ type: 'start', source: 'auto' });
+  c.handle({ type: 'state', state: 'playing' });
+  const [first] = ofType(t.chrome.sent, 'play');
+  const all = first.sentences.map((p) => p.join(' '));
+  assert.ok(all.some((x) => x.includes('nightly build')), all.join(' | '));
+  assert.ok(all.some((x) => x.startsWith('Thursday works')), all.join(' | '));
+
+  const ev = altClick(t.document, t.document.querySelector('#t2 .text'));
+  assert.equal(ev.defaultPrevented, true);
+  await new Promise((r) => setImmediate(r));
+  const plays = ofType(t.chrome.sent, 'play');
+  assert.equal(plays.length, 2);
+  const last = plays.at(-1);
+  const texts = last.sentences.map((p) => p.join(' '));
+  assert.ok(texts[last.start].startsWith('Thursday works'), texts.join(' | '));
+  assert.ok(!texts.some((x) => CHANNELS.some((ch) => x.includes(ch))), texts.join(' | '));
+  assert.ok(!texts.some((x) => x.includes('nightly build')), texts.join(' | '));
+  assert.equal(t.bars.length, 1, 'the running bar is reused');
+  assert.equal(ofType(t.chrome.sent, 'seek').length, 0);
+});
+
 test('voice chosen on the bar is saved as the stored voice', async () => {
   const { chrome, bars, c } = await started({ stored: { voice: 'alba', speed: 1.2 } });
   bars[0].action('voice', 'bob');

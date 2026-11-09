@@ -3,7 +3,7 @@
 // sends `play` with the sentences' pieces, follows `sentence-start` / `state` from the engine
 // side, and maps player-bar actions and Alt+click to engine messages.
 
-import { articleSource, pointSource, selectionSentences, sentenceIndexAt } from './source.mjs';
+import { articleSource, paneContainer, pointSource, selectionSentences, sentenceIndexAt } from './source.mjs';
 import * as nav from './nav.mjs';
 import { createHighlighter } from './highlight.mjs';
 import { createBar } from './bar.mjs';
@@ -127,6 +127,13 @@ export function createController({
   }
 
   const paneStyle = (el) => win.getComputedStyle?.(el) ?? null;
+
+  // True when the target's pane lies strictly inside the current source's container.
+  function narrowerPane(container, target) {
+    if (!container) return false;
+    const pane = paneContainer(target, { getComputedStyle: paneStyle });
+    return !!pane && pane !== doc.body && pane !== container && container.contains(pane);
+  }
 
   function play(start) {
     const s = session;
@@ -261,8 +268,22 @@ export function createController({
       const target = e.target;
       // The player bar's host sits in the page: its clicks are the bar's own.
       if (!target || target.closest?.('[data-omnivoice-reader]')) return;
+      const readFrom = (picked) => {
+        e.preventDefault();
+        e.stopPropagation?.();
+        start({ type: 'start', source: 'from-here', target }, picked);
+      };
+      const pick = () => pointSource(doc, [target], pageLang(doc, win), { getComputedStyle: paneStyle });
       const i = sentenceIndexAt(s.sentences, target);
       if (i >= 0) {
+        // A whole-page source (toolbar start on Slack or Gmail) spans every pane: narrow it to
+        // the clicked pane instead of seeking, or reading runs on into the sidebar. The pane
+        // check needs no Readability, so an article page keeps the cheap seek.
+        if (narrowerPane(s.container, target)) {
+          const picked = pick();
+          const c = picked.container;
+          if (picked.start >= 0 && c && c !== s.container && s.container.contains(c)) return readFrom(picked);
+        }
         e.preventDefault();
         e.stopPropagation?.();
         seek(i);
@@ -270,11 +291,9 @@ export function createController({
       }
       // Outside the current source (another pane of an app page): read from there instead.
       if (s.container && s.container.contains(target)) return;
-      const picked = pointSource(doc, [target], pageLang(doc, win), { getComputedStyle: paneStyle });
+      const picked = pick();
       if (picked.start < 0) return;
-      e.preventDefault();
-      e.stopPropagation?.();
-      start({ type: 'start', source: 'from-here', target }, picked);
+      readFrom(picked);
     };
     doc.addEventListener('click', s.onClick, true);
     return s;
