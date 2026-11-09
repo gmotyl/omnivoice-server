@@ -404,13 +404,13 @@ export function createBar({doc, onAction}) // → {setState(state, error?), setV
 - WHEN an item fails THEN it is fixed in a new commit (with a unit test where the behaviour is testable) and the item re-run
 
 Checklist (one news article in Polish, one English article, one page without an article):
-- [ ] Step 1: Options — voices load from `localhost:8892/v1`, "Connection OK"; save voice and speed
-- [ ] Step 2: Icon on the Polish article → bar appears, first sentence spoken and highlighted, page scrolls as reading moves
-- [ ] Step 3: Next / Previous / Shift+Next / Shift+Previous behave per spec; Alt+click a paragraph lower down jumps there
-- [ ] Step 4: Select two sentences → context menu "Read selection" → exactly those two, then the session ends
-- [ ] Step 5: "Read from here" on a paragraph starts there
-- [ ] Step 6: `Alt+Shift+R` pauses and resumes; speed 1.5 applies immediately; voice change restarts the sentence
-- [ ] Step 7: Stop the adapter (`./omnivoicectl stop`) mid-session → bar shows error + Open options + Retry; start it again → Retry continues
-- [ ] Step 8: Start reading in a second tab → first tab stops; reload the reading tab → audio stops
-- [ ] Step 9: Page without an article → body text read, no nav/footer
-- [ ] Step 10: Record the results per browser in the session progress note
+- [x] Step 1: Options — voices load from `localhost:8892/v1`, "Connection OK"; save voice and speed
+- [x] Step 2: Icon on the Polish article → bar appears, first sentence spoken and highlighted, page scrolls as reading moves
+- [x] Step 3: Next / Previous / Shift+Next / Shift+Previous behave per spec; Alt+click a paragraph lower down jumps there
+- [x] Step 4: Select two sentences → context menu "Read selection" → exactly those two, then the session ends
+- [x] Step 5: "Read from here" on a paragraph starts there
+- [x] Step 6: `Alt+Shift+R` pauses and resumes; speed 1.5 applies immediately; voice change restarts the sentence
+- [x] Step 7: Stop the adapter (`./omnivoicectl stop`) mid-session → bar shows error + Open options + Retry; start it again → Retry continues
+- [x] Step 8: Start reading in a second tab → first tab stops; reload the reading tab → audio stops
+- [x] Step 9: Page without an article → body text read, no nav/footer
+- [x] Step 10: Record the results per browser in the session progress note
