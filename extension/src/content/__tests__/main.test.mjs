@@ -394,3 +394,27 @@ test('a new start with nothing to read stops the running audio', async () => {
   assert.equal(ofType(t.chrome.sent, 'stop').length, 1);
   assert.equal(ofType(t.chrome.sent, 'play').length, 1);
 });
+
+test('an older start finishing after a newer one has no side effects', async () => {
+  const t = await started();
+  t.chrome.sent.length = 0;
+  // The first settings load is slow, so the older start resumes after the newer one played.
+  let release;
+  const get = t.chrome.storage.sync.get;
+  let calls = 0;
+  t.chrome.storage.sync.get = async (defaults) => {
+    if (calls++ === 0) await new Promise((r) => (release = r));
+    return get(defaults);
+  };
+  // Older start: "Read selection" with nothing selected finds no sentences.
+  const older = t.c.handle({ type: 'start', source: 'selection' });
+  await new Promise((r) => setImmediate(r));
+  await t.c.handle({ type: 'start', source: 'auto' });
+  assert.equal(ofType(t.chrome.sent, 'play').length, 1);
+  const statesBefore = t.bars[0].states.length;
+  release();
+  await older;
+  assert.equal(ofType(t.chrome.sent, 'stop').length, 0, 'no stop for the newer playback');
+  assert.equal(t.bars[0].states.length, statesBefore, 'bar untouched');
+  assert.equal(t.c.session.state, 'loading');
+});

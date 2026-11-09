@@ -37,7 +37,8 @@ export function createController({
   let session = null;
   // Voice listing of the current session (shared by restarts inside it); reset on teardown.
   let voicesAsked = null;
-  // Bumped by every teardown, so a stop that lands while start() awaits cancels that start.
+  // Bumped by every start and every teardown: a start that resumes after a stop or a newer start
+  // is superseded and returns without side effects (no stop, no bar change).
   let startToken = 0;
 
   if (listVoices === undefined) {
@@ -244,7 +245,7 @@ export function createController({
   }
 
   async function start(msg) {
-    const token = startToken;
+    const token = ++startToken;
     const settings = await loadSettings();
     if (token !== startToken) return;
     const { list, voice } = await resolveVoice(settings.voice);
