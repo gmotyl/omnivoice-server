@@ -19,11 +19,12 @@ NARRATE_LOG="$DIR/logs/narrate.log"
 CALLER_PATH="${PATH:-}"
 
 # The boot command runs with a near-empty environment; pin everything the server needs.
-export HOME="${HOME:-/root}"
+# No HOME (the WSL [boot] command): take the invoking user's home from passwd.
+if [[ -z "${HOME:-}" ]]; then
+  HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)"
+  export HOME="${HOME:-/root}"
+fi
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
-export HF_HOME="${HF_HOME:-/root/.cache/huggingface}"
-# Model is cached; don't let a boot without network block on a hub lookup.
-export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 
 # Optional, gitignored $DIR/relay.env: KEY=VALUE lines (blank lines and # comments skipped,
 # one pair of surrounding quotes stripped) for the relay and this ctl, so RELAY_ALLOWED_ORIGINS
@@ -50,6 +51,11 @@ load_relay_env() {
   done <"$RELAY_ENV_FILE"
 }
 load_relay_env
+
+# Defaults applied after relay.env, so the file can set them (the calling environment still wins).
+export HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
+# Model is cached; don't let a boot without network block on a hub lookup.
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 
 PORT="${OMNIVOICE_PORT:-8890}"
 RELAY_PORT="${RELAY_PORT:-8891}"

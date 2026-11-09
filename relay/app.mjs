@@ -29,6 +29,19 @@ export function toVoiceInfo(record) {
 }
 
 /**
+ * The browser-origin allowlist from a comma list (`RELAY_ALLOWED_ORIGINS`). Unset or blank means
+ * none: there is no default origin.
+ * @param {string | undefined} value
+ * @returns {string[]}
+ */
+export function parseAllowedOrigins(value) {
+  return (value ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
+
+/**
  * Fetch-style relay in front of OmniVoice: `POST /` (anytts relay protocol, engine `openai` only),
  * `GET /voices` (refreshes the catalog), `GET /health`, with an origin allowlist for browsers.
  * @param {{ omnivoiceUrl: string, allowedOrigins: string[], fetch?: typeof fetch }} options
@@ -154,7 +167,7 @@ export function createRelayApp({ omnivoiceUrl, allowedOrigins, fetch = globalThi
       if (req.method === "OPTIONS") {
         headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
         headers.set("access-control-allow-headers", "content-type");
-        // Private Network Access: a public page (https://motyl.dev) calling a tailnet host.
+        // Private Network Access: a public page (https://example.com) calling a tailnet host.
         if (req.headers.get("access-control-request-private-network") === "true") {
           headers.set("access-control-allow-private-network", "true");
         }
