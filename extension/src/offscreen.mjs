@@ -33,8 +33,9 @@ let playToken = 0;
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
   // Content scripts' runtime messages reach every extension page; only act on the
-  // copies the service worker relays, so each command is handled once.
-  if (sender?.tab || !msg || typeof msg.type !== "string") return;
+  // copies the service worker relays (stamped `target: "offscreen"`), so each command
+  // is handled once.
+  if (sender?.tab || !msg || msg.target !== "offscreen" || typeof msg.type !== "string") return;
   switch (msg.type) {
     case "play": {
       const token = ++playToken;

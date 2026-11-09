@@ -344,9 +344,9 @@ export function createBar({doc, onAction}) // → {setState(state, error?), setV
 - "tab reload or close stops playback"
 - "offscreen events go to the owning tab only"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -m "feat(extension): service worker triggers and routing"`
+- [x] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -m "feat(extension): service worker triggers and routing"`
 
 ### Task 11: Options page
 
