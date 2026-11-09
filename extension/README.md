@@ -27,7 +27,7 @@ prefetched while the current one plays.
 
 - Chrome or Edge 116+ (`minimum_chrome_version` in the manifest: the offscreen document API needs
   109+, `chrome.runtime.getContexts` 116+; the CSS Custom Highlight API 105+).
-- Node 22+ and npm to build.
+- Node 22+ and pnpm to build.
 - An OpenAI-compatible TTS server. The default is our adapter on `http://localhost:8892/v1`,
   started with `./omnivoicectl start` from the repository root (see the top-level
   [README § Narrate / Read Aloud adapter](../README.md#narrate--read-aloud-adapter)).
@@ -37,8 +37,8 @@ prefetched while the current one plays.
 
 ```bash
 cd extension
-npm install
-npm run build        # bundles the content script into dist/content.js
+pnpm install
+pnpm build           # bundles the content script into dist/content.js
 ```
 
 Then in the browser:
@@ -137,9 +137,9 @@ To change the shortcut, open `chrome://extensions/shortcuts` (`edge://extensions
 ## Development
 
 ```bash
-npm install
-npm run build        # must run before npm test: the manifest test checks dist/content.js
-npm test             # node --test "src/**/*.test.mjs"
+pnpm install
+pnpm build           # must run before pnpm test: the manifest test checks dist/content.js
+pnpm test            # node --test "src/**/*.test.mjs"
 ```
 
 Plain ES modules, no framework. `chrome.*`, `fetch`, `Audio` and `CSS.highlights` are injected or

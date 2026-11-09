@@ -1,5 +1,5 @@
 // Manifest and build checks. "every manifest path exists after build" assumes
-// `npm run build` already ran (the plan's verify step is `npm run build && npm test`);
+// `pnpm build` already ran (the verify step is `pnpm build && pnpm test`);
 // it does not invoke the build itself.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -69,7 +69,7 @@ test("every manifest path exists after build", () => {
   ];
   for (const p of paths) {
     assert.equal(typeof p, "string", "manifest path missing");
-    assert.ok(existsSync(join(root, p)), `missing: ${p} (run \`npm run build\` first)`);
+    assert.ok(existsSync(join(root, p)), `missing: ${p} (run \`pnpm build\` first)`);
   }
 });
 
