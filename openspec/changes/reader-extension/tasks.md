@@ -214,9 +214,9 @@ export function createQueue({fetchAudio, prefetch = 3})
 - "fetch failure rejects only its index"
 - "clear aborts everything"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -m "feat(extension): prefetching sentence queue"`
+- [x] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -m "feat(extension): prefetching sentence queue"`
 
 ### Task 7: Offscreen player
 
