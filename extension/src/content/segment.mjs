@@ -18,6 +18,7 @@ const CONTAINER_TAGS = new Set([
   'UL', 'OL', 'DL', 'TABLE', 'TBODY', 'THEAD', 'TFOOT', 'TR',
 ]);
 // Never read: non-content elements and form controls (their labels and option lists are UI).
+// LABEL is skipped on purpose: a form label names a control, it is not article prose.
 const SKIP_TAGS = new Set([
   'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE',
   'BUTTON', 'SELECT', 'OPTION', 'OPTGROUP', 'TEXTAREA', 'LABEL', 'INPUT',

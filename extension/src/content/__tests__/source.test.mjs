@@ -181,3 +181,53 @@ test('selection ending at the start of the next paragraph stops before it', () =
   assert.equal(sentences[1].range.endContainer, a);
   assert.equal(sentences[1].range.endOffset, a.data.length);
 });
+
+const divParagraph = (n) =>
+  `<div>Div ${n}. Text that talks about the topic at length, with commas, details, and more words so that it scores well. ` +
+  `It keeps going for a while longer here, adding context, examples, and filler.</div>`;
+
+const wrapperPage = () => `<div id="page">
+    <nav><a href="/">Home</a> <a href="/x">X</a></nav>
+    <aside><p>Sidebar noise. Subscribe now.</p></aside>
+    <div id="content">${[1, 2, 3, 4].map(divParagraph).join('')}</div>
+    <p id="brp">Short sibling line.</p>
+    <footer><p>Copyright notice.</p></footer>
+  </div>`;
+
+test('article sentences inside a wrapper container skip nav, aside and footer', () => {
+  const doc = dom(wrapperPage());
+  const sentences = articleSentences(doc, 'en');
+  const texts = sentences.map((s) => s.text);
+  assert.ok(texts.includes('Div 1.'), texts.join(' | '));
+  for (const noise of ['Home', 'Sidebar', 'Subscribe', 'Copyright']) {
+    assert.ok(!texts.some((t) => t.includes(noise)), `${noise} leaked: ${texts.join(' | ')}`);
+  }
+  assert.equal(sentences[0].paragraph, 0);
+  const paragraphs = [...new Set(sentences.map((s) => s.paragraph))];
+  assert.deepEqual(paragraphs, paragraphs.map((_, i) => i));
+});
+
+test('articleContainer ignores chrome text when picking the article ancestor', () => {
+  const doc = dom(`<div id="page"><aside><p>Related: another story worth reading.</p></aside>
+    <article id="art">${[1, 2, 3, 4, 5].map(longParagraph).join('')}</article></div>`);
+  // Readability stand-in that keeps the aside next to the article
+  class KeepAside {
+    constructor(clone) { this.clone = clone; }
+    parse() {
+      const wrap = this.clone.createElement('div');
+      wrap.append(this.clone.querySelector('aside'), this.clone.getElementById('art'));
+      return { content: wrap };
+    }
+  }
+  assert.equal(articleContainer(doc, { Readability: KeepAside }).id, 'art');
+});
+
+test('chrome is kept when the article container itself is inside chrome', () => {
+  const doc = dom(`<aside id="side"><p>Only text on the page. It sits in an aside.</p></aside>`);
+  class PickAside {
+    constructor(clone) { this.clone = clone; }
+    parse() { return { content: this.clone.getElementById('side') }; }
+  }
+  const sentences = articleSentences(doc, 'en', { Readability: PickAside });
+  assert.deepEqual(sentences.map((s) => s.text), ['Only text on the page.', 'It sits in an aside.']);
+});

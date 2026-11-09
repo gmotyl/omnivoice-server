@@ -5,7 +5,7 @@ import { Readability } from '@mozilla/readability';
 import { segment, cutPieces, BLOCK_SELECTOR } from './segment.mjs';
 
 const MARK = 'data-omnivoice-id';
-const CHROME_SELECTOR = 'nav, header, footer, aside';
+const CHROME_SELECTOR = 'nav, header, footer, aside, [aria-hidden="true"]';
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 
@@ -69,9 +69,14 @@ export function articleContainer(doc, { Readability: Reader = Readability } = {}
     const holder = marked && content.contains(marked) ? toLive(marked) : null;
     if (holder) textHolders.push(holder);
   }
-  const candidates = textHolders.length
-    ? textHolders
-    : [...content.querySelectorAll(`[${MARK}]`)].map(toLive).filter(Boolean);
+  // Text in page chrome (a kept sidebar, a footer) must not widen the container: the
+  // ancestor is computed from article text alone when there is any.
+  const articleText = textHolders.filter((el) => !el.closest(CHROME_SELECTOR));
+  const candidates = articleText.length
+    ? articleText
+    : textHolders.length
+      ? textHolders
+      : [...content.querySelectorAll(`[${MARK}]`)].map(toLive).filter(Boolean);
   if (!candidates.length) return body;
 
   const container = commonAncestor(candidates);
@@ -87,18 +92,24 @@ function renumber(sentences) {
   });
 }
 
-function inChrome(node) {
-  const el = node.nodeType === ELEMENT_NODE ? node : node.parentElement;
-  return Boolean(el && el.closest(CHROME_SELECTOR));
+// True when the node sits in a chrome element strictly inside the container. Chrome that
+// holds the container itself (an article inside an <aside>) does not count.
+function inChromeWithin(node, container) {
+  let el = node.nodeType === ELEMENT_NODE ? node : node.parentElement;
+  for (; el && el !== container; el = el.parentElement) {
+    if (el.matches(CHROME_SELECTOR)) return true;
+  }
+  return false;
 }
 
 export function articleSentences(doc, lang, options = {}) {
   lang = lang || doc.documentElement.getAttribute('lang') || undefined;
   const container = articleContainer(doc, options);
   const sentences = segment(container, { lang, doc });
-  if (container !== doc.body) return sentences;
-  // body fallback: page chrome is not read (aria-hidden is already skipped by segment)
-  return renumber(sentences.filter((s) => !inChrome(s.range.startContainer)));
+  // Page chrome inside the container is not read: the <body> fallback, or a wrapper such as
+  // div#page when Readability keeps a short sibling next to the article.
+  const kept = sentences.filter((s) => !inChromeWithin(s.range.startContainer, container));
+  return kept.length === sentences.length ? sentences : renumber(kept);
 }
 
 function indexOf(node) {

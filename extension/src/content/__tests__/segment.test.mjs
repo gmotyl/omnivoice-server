@@ -220,3 +220,9 @@ test('lists break runs between items and surrounding text', () => {
   const sentences = segment(doc.getElementById('root'), { lang: 'en', doc });
   assert.deepEqual(sentences.map((s) => s.text), ['Lead text', 'One', 'tail text', 'Term', 'Meaning']);
 });
+
+test('text directly inside a list is a run of its own', () => {
+  const doc = dom(`<div id="root">Lead text<ul>List heading<li>One</li></ul>tail text</div>`);
+  const sentences = segment(doc.getElementById('root'), { lang: 'en', doc });
+  assert.deepEqual(sentences.map((s) => s.text), ['Lead text', 'List heading', 'One', 'tail text']);
+});
