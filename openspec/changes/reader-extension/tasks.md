@@ -284,9 +284,9 @@ export function createBar({doc, onAction}) // → {setState(state, error?), setV
 - "error state shows message, options link and retry"
 - "destroy removes the bar"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -m "feat(extension): sentence highlight and player bar"`
+- [x] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -m "feat(extension): sentence highlight and player bar"`
 
 ### Task 9: Content session
 
