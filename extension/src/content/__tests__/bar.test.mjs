@@ -123,3 +123,21 @@ test('transport icons are inline SVG, not font glyphs', () => {
   // No remote assets: icons are drawn from paths, never <image> or <use href>.
   assert.equal(root.querySelectorAll('image, use, img').length, 0);
 });
+
+test('autoscroll toggle flips aria-pressed and emits its state', () => {
+  const { document, attached, actions, bar } = setup();
+  const { root } = attached[0];
+  const btn = root.querySelector('button[aria-label="Autoscroll"]');
+  assert.ok(btn, 'autoscroll button');
+  assert.ok(btn.querySelector('svg'), 'inline svg icon');
+  assert.equal(btn.getAttribute('aria-pressed'), 'true');
+  click(document, btn);
+  assert.equal(btn.getAttribute('aria-pressed'), 'false');
+  click(document, btn);
+  assert.equal(btn.getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(actions, [['autoscroll', false], ['autoscroll', true]]);
+  // The session sets the stored value without emitting an action.
+  bar.setAutoscroll(false);
+  assert.equal(btn.getAttribute('aria-pressed'), 'false');
+  assert.equal(actions.length, 2);
+});

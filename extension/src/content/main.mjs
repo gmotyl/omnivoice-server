@@ -7,11 +7,12 @@ import { articleSentences, selectionSentences, sentenceIndexAt } from './source.
 import * as nav from './nav.mjs';
 import { createHighlighter } from './highlight.mjs';
 import { createBar } from './bar.mjs';
+import { DEFAULTS, saveSettings } from '../settings.mjs';
 
 // One controller per page, shared by every injection of the bundle.
 export const CONTROLLER_KEY = Symbol.for('omnivoice-reader.controller');
 
-const SETTINGS_DEFAULTS = { voice: '', speed: 1.0 };
+const SETTINGS_DEFAULTS = { voice: DEFAULTS.voice, speed: DEFAULTS.speed, autoscroll: DEFAULTS.autoscroll };
 const PLAYING = new Set(['playing', 'loading']);
 
 function pageLang(doc, win) {
@@ -56,7 +57,8 @@ export function createController({
   async function loadSettings() {
     try {
       const got = await chrome.storage?.sync?.get(SETTINGS_DEFAULTS);
-      return { ...SETTINGS_DEFAULTS, ...(got || {}) };
+      const merged = { ...SETTINGS_DEFAULTS, ...(got || {}) };
+      return { ...merged, autoscroll: merged.autoscroll !== false };
     } catch {
       return { ...SETTINGS_DEFAULTS };
     }
@@ -206,6 +208,14 @@ export function createController({
       case 'voice':
         session.voice = payload;
         return send({ type: 'set-voice', voice: payload });
+      case 'autoscroll': {
+        session.autoscroll = payload !== false;
+        // Turned back on: bring the sentence being read into view now, not at the next one.
+        if (session.autoscroll && session.shown != null && sentences[session.shown]) {
+          session.highlighter.show(sentences[session.shown], { scroll: true });
+        }
+        return saveAutoscroll(session.autoscroll);
+      }
       case 'retry':
         // "Nothing to read" has no sentences to replay: pick them again (the page may have rendered since).
         return sentences.length ? play(current) : start(session.startMsg);
@@ -219,6 +229,15 @@ export function createController({
     }
   }
 
+  // The toggle is a stored preference (shared with the options page), not a session setting.
+  async function saveAutoscroll(value) {
+    try {
+      if (chrome.storage?.sync?.set) await saveSettings(chrome.storage.sync, { autoscroll: value });
+    } catch {
+      // storage unavailable (e.g. extension reloaded): the toggle still applies to this session
+    }
+  }
+
   function createSession(voice, speed) {
     const s = {
       sentences: [],
@@ -226,6 +245,9 @@ export function createController({
       state: 'idle',
       voice,
       speed,
+      autoscroll: true,
+      // Index of the highlighted sentence, or null.
+      shown: null,
       highlighter: makeHighlighter({ doc, win }),
       bar: null,
       onClick: null,
@@ -262,6 +284,9 @@ export function createController({
     session.speed = settings.speed;
     session.bar.setVoices(list, voice);
     session.bar.setSpeed(settings.speed);
+    session.autoscroll = settings.autoscroll;
+    session.shown = null;
+    session.bar.setAutoscroll?.(settings.autoscroll);
     if (!sentences.length) {
       // The previous session's audio would otherwise keep playing under the error.
       if (running) send({ type: 'stop' });
@@ -286,14 +311,18 @@ export function createController({
         const s = session?.sentences[msg.index];
         if (!s) return undefined;
         session.current = msg.index;
-        session.highlighter.show(s);
+        session.shown = msg.index;
+        session.highlighter.show(s, { scroll: session.autoscroll });
         return undefined;
       }
       case 'state':
         if (!session) return undefined;
         session.state = msg.state;
         session.bar.setState(msg.state, msg.error);
-        if (msg.state === 'idle') session.highlighter.clear();
+        if (msg.state === 'idle') {
+          session.highlighter.clear();
+          session.shown = null;
+        }
         return undefined;
       default:
         return undefined;

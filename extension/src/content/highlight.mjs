@@ -1,5 +1,6 @@
 // Highlights the current sentence with the CSS Custom Highlight API, so the page DOM is
-// never mutated, and scrolls it into view only when it is off-screen.
+// never mutated, and scrolls it into view only when it is off-screen (unless the caller turns
+// scrolling off: show(sentence, {scroll: false}) only highlights).
 
 const NAME = 'reader-current';
 const STYLE_ID = 'omnivoice-reader-highlight-style';
@@ -109,12 +110,13 @@ export function createHighlighter({
     target?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }
 
-  function show(sentence) {
+  function show(sentence, { scroll = true } = {}) {
     ensureStyle();
     if (!current) current = new Highlight();
     current.clear();
     current.add(sentence.range);
     highlights.set(NAME, current);
+    if (!scroll) return;
     const rect = sentence.range.getBoundingClientRect();
     const boxes = scrollers(scrollTarget(sentence.range));
     if (isOffScreen(rect, visibleRect(boxes))) scrollToSentence(sentence.range, rect, boxes);

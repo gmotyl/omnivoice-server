@@ -61,6 +61,7 @@ Settings are stored in `chrome.storage.sync`.
 | Model           | `tts-1`                    | the `model` field of each speech request                              |
 | Voice           | empty                      | a list when the server answers `/audio/voices`, else free text; empty = the first listed voice |
 | Speed           | `1.0`                      | 0.5 to 2.0, step 0.1                                                  |
+| Autoscroll      | on                         | scroll the page to the sentence being read; also toggled on the bar   |
 
 `http://localhost` and `http://127.0.0.1` are allowed by the manifest. Any other base URL
 (another host, or `https://`) makes **Save** ask for an optional host permission for that
@@ -88,9 +89,11 @@ The player bar:
 | Previous / Next   | previous / next sentence; with **Shift**: previous / next paragraph |
 | Voice             | switch voice; the current sentence starts again in the new voice |
 | Speed slider      | 0.5×–2.0×, applies immediately                                |
+| Autoscroll        | on / off: follow the read sentence by scrolling; off keeps the highlight but never scrolls. Saved as the default |
 | Close             | stop and remove the bar and highlight                         |
 
 Voice and speed changed on the bar apply to the current session only; defaults live in Options.
+The **Autoscroll** toggle is the exception: it is saved and shared with the Options checkbox.
 **Alt+click** a paragraph to jump there (also after the last sentence, until you close the bar).
 Only one tab reads at a time: starting in another tab stops the first one. Navigating or closing
 the reading tab stops it.
@@ -113,6 +116,8 @@ To change the shortcut, open `chrome://extensions/shortcuts` (`edge://extensions
   after sound stops. The extension recreates it on resume or seek (and on a voice / speed change
   while loading or playing; while paused the change is kept for the next resume), so a pause
   longer than that resumes from the start of the current sentence rather than mid-sentence.
+- **The page jumps while I scroll around**: turn **Autoscroll** off on the bar (dimmed = off). The
+  current sentence stays highlighted; turning it back on scrolls to it right away.
 - **Old behaviour after a rebuild**: reload the extension on `chrome://extensions` /
   `edge://extensions`, then reload the page.
 - **Shortcut does nothing**: another extension may own `Alt+Shift+R`; check

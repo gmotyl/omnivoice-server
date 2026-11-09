@@ -163,3 +163,14 @@ test("an empty voice list reports that the server lists no voices", async () => 
   assert.equal(voice.tagName, "INPUT");
   assert.equal(voice.value, "typed");
 });
+
+test("options saves the autoscroll checkbox", async () => {
+  const { document, chrome, page } = await setup({ stored: { autoscroll: false }, voices: { ok: true, voices: null } });
+  const box = document.getElementById("autoscroll");
+  assert.equal(box.getAttribute("type"), "checkbox");
+  assert.ok(document.querySelector('label[for="autoscroll"]'));
+  assert.equal(box.checked, false);
+  box.checked = true;
+  await submit(document, page);
+  assert.equal(chrome.data.autoscroll, true);
+});

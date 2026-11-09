@@ -160,3 +160,17 @@ test('a tall paragraph in a nested scroll box is revealed through the outer scro
   // The sentence is then centred in the outer box, which the window already shows.
   assert.equal(winScrolls.length, 0);
 });
+
+test('show with scroll off highlights without scrolling', () => {
+  const { scrolls, makeSentence, highlights, hl, win } = setup();
+  const scrolledWindow = [];
+  win.scrollBy = (opts) => scrolledWindow.push(opts);
+  const far = makeSentence('p2', { top: 1500, bottom: 1520, left: 0, right: 100 });
+  hl.show(far, { scroll: false });
+  assert.deepEqual([...highlights.get('reader-current')], [far.range]);
+  assert.equal(scrolls.length, 0);
+  assert.equal(scrolledWindow.length, 0);
+  // Default (no options) still scrolls.
+  hl.show(far);
+  assert.equal(scrolls.length, 1);
+});

@@ -42,7 +42,15 @@ function fakeChrome(stored = {}) {
         removeListener: (fn) => listeners.splice(listeners.indexOf(fn), 1),
       },
     },
-    storage: { sync: { get: async (defaults) => ({ ...defaults, ...stored }) } },
+    stored,
+    storage: {
+      sync: {
+        get: async (defaults) => ({ ...defaults, ...stored }),
+        set: async (obj) => {
+          Object.assign(stored, obj);
+        },
+      },
+    },
   };
 }
 
@@ -75,8 +83,9 @@ function setup({ selection = null, stored = {}, listVoices = null, page = PAGE }
   const highlights = [];
   const highlighter = {
     shown: null,
-    show(s) {
+    show(s, opts) {
       this.shown = s;
+      this.opts = opts;
       highlights.push(s);
     },
     clear() {
@@ -417,4 +426,32 @@ test('an older start finishing after a newer one has no side effects', async () 
   assert.equal(ofType(t.chrome.sent, 'stop').length, 0, 'no stop for the newer playback');
   assert.equal(t.bars[0].states.length, statesBefore, 'bar untouched');
   assert.equal(t.c.session.state, 'loading');
+});
+
+test('autoscroll setting is read at start and passed to the highlighter', async () => {
+  const on = await started();
+  on.c.handle({ type: 'sentence-start', index: 1 });
+  assert.equal(on.highlighter.opts.scroll, true);
+
+  const off = await started({ stored: { autoscroll: false } });
+  off.c.handle({ type: 'sentence-start', index: 1 });
+  assert.equal(off.highlighter.shown, off.c.session.sentences[1], 'still highlighted');
+  assert.equal(off.highlighter.opts.scroll, false);
+});
+
+test('autoscroll toggle on the bar saves the setting and stops scrolling', async () => {
+  const { chrome, bars, highlighter, c } = await started();
+  c.handle({ type: 'sentence-start', index: 1 });
+  bars[0].action('autoscroll', false);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(chrome.stored.autoscroll, false);
+  c.handle({ type: 'sentence-start', index: 2 });
+  assert.equal(highlighter.opts.scroll, false);
+  // Turning it back on brings the current sentence into view right away.
+  bars[0].action('autoscroll', true);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(chrome.stored.autoscroll, true);
+  assert.equal(highlighter.shown, c.session.sentences[2]);
+  assert.equal(highlighter.opts.scroll, true);
+  assert.equal(ofType(chrome.sent, 'autoscroll').length, 0, 'nothing sent to the engine');
 });

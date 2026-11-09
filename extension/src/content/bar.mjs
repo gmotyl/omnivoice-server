@@ -14,6 +14,8 @@ const ICONS = {
   next: svg('<rect x="12" y="3" width="2" height="10"/><path d="M2 3v10l9-5z"/>'),
   play: svg('<path d="M4 2.5v11L13.5 8z"/>'),
   pause: svg('<rect x="3.5" y="2.5" width="3" height="11"/><rect x="9.5" y="2.5" width="3" height="11"/>'),
+  // Down arrow over a page line: follow the read sentence down the page.
+  autoscroll: svg('<rect x="2" y="1.5" width="12" height="1.6"/><path d="M7.2 4.5h1.6v5.2l2-2 1.1 1.1L8 12.7 4.1 8.8l1.1-1.1 2 2z"/><rect x="2" y="13" width="12" height="1.6"/>'),
   close: svg('<path d="M3.5 2.1 8 6.6l4.5-4.5 1.4 1.4L9.4 8l4.5 4.5-1.4 1.4L8 9.4l-4.5 4.5-1.4-1.4L6.6 8 2.1 3.5z"/>'),
 };
 
@@ -30,6 +32,7 @@ const STYLE = `
     border-radius: 6px; padding: 4px 8px; cursor: pointer; }
   button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
     outline: 2px solid #58a6ff; outline-offset: 1px; }
+  button[aria-pressed="false"] { opacity: 0.55; }
   .speed-value { min-width: 2.5em; text-align: right; }
   .error { flex-basis: 100%; display: flex; gap: 8px; align-items: center; color: #ffb4ab; }
   .error[hidden] { display: none; }
@@ -45,6 +48,7 @@ const TEMPLATE = `
     <select class="voice" aria-label="Voice"></select>
     <input class="speed" type="range" min="0.5" max="2" step="0.1" value="1" aria-label="Speed">
     <span class="speed-value">1.0&times;</span>
+    <button type="button" class="autoscroll" aria-label="Autoscroll" aria-pressed="true" title="Scroll to the read sentence">${ICONS.autoscroll}</button>
     <button type="button" class="close" aria-label="Close">${ICONS.close}</button>
     <div class="error" role="alert" hidden>
       <span class="message"></span>
@@ -69,6 +73,7 @@ export function createBar({ doc = globalThis.document, onAction = () => {} } = {
   const voice = $('.voice');
   const speed = $('.speed');
   const speedValue = $('.speed-value');
+  const autoscroll = $('.autoscroll');
   const error = $('.error');
   const message = $('.message');
 
@@ -77,6 +82,11 @@ export function createBar({ doc = globalThis.document, onAction = () => {} } = {
   on($('.prev'), 'click', (e) => onAction(e.shiftKey ? 'prev-paragraph' : 'prev'));
   on($('.next'), 'click', (e) => onAction(e.shiftKey ? 'next-paragraph' : 'next'));
   on($('.close'), 'click', () => onAction('close'));
+  on(autoscroll, 'click', () => {
+    const value = autoscroll.getAttribute('aria-pressed') !== 'true';
+    setAutoscroll(value);
+    onAction('autoscroll', value);
+  });
   on($('.retry'), 'click', () => onAction('retry'));
   on($('.options'), 'click', (e) => { e.preventDefault(); onAction('options'); });
   on(voice, 'change', () => onAction('voice', voice.value));
@@ -123,9 +133,13 @@ export function createBar({ doc = globalThis.document, onAction = () => {} } = {
     showSpeed(s);
   }
 
+  function setAutoscroll(value) {
+    autoscroll.setAttribute('aria-pressed', value ? 'true' : 'false');
+  }
+
   function destroy() {
     host.remove();
   }
 
-  return { setState, setVoices, setSpeed, destroy };
+  return { setState, setVoices, setSpeed, setAutoscroll, destroy };
 }

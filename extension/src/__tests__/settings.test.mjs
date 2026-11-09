@@ -21,6 +21,7 @@ test("loadSettings returns defaults", async () => {
     voice: "",
     speed: 1.0,
     model: "tts-1",
+    autoscroll: true,
   });
   assert.deepEqual(await loadSettings(fakeStorage()), DEFAULTS);
   assert.deepEqual(await loadSettings(undefined), DEFAULTS);
@@ -54,4 +55,16 @@ test("empty model and base URL fall back to the defaults", async () => {
   assert.equal(loaded.model, DEFAULTS.model);
   assert.equal(loaded.baseUrl, DEFAULTS.baseUrl);
   assert.equal((await saveSettings(storage, { model: " tts-1-hd " })).model, "tts-1-hd");
+});
+
+test("autoscroll defaults to on and is stored as a boolean", async () => {
+  const storage = fakeStorage();
+  assert.equal((await loadSettings(storage)).autoscroll, true);
+  assert.deepEqual(await saveSettings(storage, { autoscroll: false }), { autoscroll: false });
+  assert.equal(storage.data.autoscroll, false);
+  assert.equal((await loadSettings(storage)).autoscroll, false);
+  // Form-ish values are coerced; anything but an explicit off value means on.
+  assert.equal((await saveSettings(storage, { autoscroll: "false" })).autoscroll, false);
+  assert.equal((await saveSettings(storage, { autoscroll: "true" })).autoscroll, true);
+  assert.equal((await loadSettings(fakeStorage({ autoscroll: "junk" }))).autoscroll, true);
 });

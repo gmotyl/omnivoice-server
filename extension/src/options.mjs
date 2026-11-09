@@ -63,6 +63,7 @@ export function initOptions({
       model: $("model").value,
       voice: $("voice").value,
       speed: $("speed").value,
+      autoscroll: $("autoscroll").checked,
     };
   }
 
@@ -71,6 +72,7 @@ export function initOptions({
     $("apiKey").value = s.apiKey;
     $("model").value = s.model;
     $("speed").value = String(s.speed);
+    $("autoscroll").checked = s.autoscroll !== false;
     renderVoice(null, s.voice);
   }
 
