@@ -231,3 +231,17 @@ test('chrome is kept when the article container itself is inside chrome', () => 
   const sentences = articleSentences(doc, 'en', { Readability: PickAside });
   assert.deepEqual(sentences.map((s) => s.text), ['Only text on the page.', 'It sits in an aside.']);
 });
+
+test('article header and footer inside the article are read', () => {
+  const doc = dom(`<nav><a href="/">Home</a> <a href="/x">X</a></nav>
+    <article id="art"><header><h1>Big Title Here</h1><p>By Author, 2026</p></header>
+      ${[1, 2, 3, 4, 5].map(longParagraph).join('')}
+      <footer><p>Tags: reading, audio.</p></footer></article>
+    <footer><p>Copyright notice.</p></footer>`);
+  assert.equal(articleContainer(doc).id, 'art');
+  const texts = articleSentences(doc, 'en').map((s) => s.text);
+  assert.equal(texts[0], 'Big Title Here', texts.join(' | '));
+  assert.ok(texts.some((t) => t.includes('By Author')), texts.join(' | '));
+  assert.ok(texts.some((t) => t.includes('Tags')), texts.join(' | '));
+  assert.ok(!texts.some((t) => t.includes('Copyright') || t.includes('Home')), texts.join(' | '));
+});

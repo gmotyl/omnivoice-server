@@ -5,9 +5,28 @@ import { Readability } from '@mozilla/readability';
 import { segment, cutPieces, BLOCK_SELECTOR } from './segment.mjs';
 
 const MARK = 'data-omnivoice-id';
-const CHROME_SELECTOR = 'nav, header, footer, aside, [aria-hidden="true"]';
+// Always chrome. [aria-hidden="true"] matters for the candidate filter in articleContainer:
+// hidden text that Readability keeps must not widen the container.
+const CHROME_SELECTOR = 'nav, aside, [aria-hidden="true"]';
+// Chrome only at page level: a header/footer inside an article or main belongs to it (HTML
+// sectioning), e.g. the article's own title, byline and tag line.
+const PAGE_CHROME_SELECTOR = 'header, footer';
+const SECTIONING_SELECTOR = 'article, main';
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
+
+function isChrome(el) {
+  if (el.matches(CHROME_SELECTOR)) return true;
+  if (!el.matches(PAGE_CHROME_SELECTOR)) return false;
+  const owner = el.parentElement && el.parentElement.closest(SECTIONING_SELECTOR);
+  return !owner;
+}
+
+// The nearest chrome element at or above el, or null.
+function chromeOf(el) {
+  for (; el; el = el.parentElement) if (isChrome(el)) return el;
+  return null;
+}
 
 function commonAncestor(elements) {
   let lca = elements[0];
@@ -71,7 +90,7 @@ export function articleContainer(doc, { Readability: Reader = Readability } = {}
   }
   // Text in page chrome (a kept sidebar, a footer) must not widen the container: the
   // ancestor is computed from article text alone when there is any.
-  const articleText = textHolders.filter((el) => !el.closest(CHROME_SELECTOR));
+  const articleText = textHolders.filter((el) => !chromeOf(el));
   const candidates = articleText.length
     ? articleText
     : textHolders.length
@@ -97,7 +116,7 @@ function renumber(sentences) {
 function inChromeWithin(node, container) {
   let el = node.nodeType === ELEMENT_NODE ? node : node.parentElement;
   for (; el && el !== container; el = el.parentElement) {
-    if (el.matches(CHROME_SELECTOR)) return true;
+    if (isChrome(el)) return true;
   }
   return false;
 }
