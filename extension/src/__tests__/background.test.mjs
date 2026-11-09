@@ -151,18 +151,19 @@ test("play creates the offscreen document once", async () => {
   deliver(chrome, { ...PLAY, start: 1 }, 1);
   await tick();
   assert.equal(chrome.calls.offscreenCreated, 1);
+  // Concurrent plays from one tab: only the newest is forwarded.
   const plays = chrome.calls.runtimeMessages.filter((m) => m.type === "play");
-  assert.equal(plays.length, 2);
+  assert.equal(plays.length, 1);
   assert.equal(plays[0].target, "offscreen");
   assert.deepEqual(plays[0].sentences, PLAY.sentences);
   assert.deepEqual(plays[0].settings, { baseUrl: "http://localhost:9000/v1", apiKey: "k", model: "tts-1" });
-  assert.equal(plays[1].start, 1);
+  assert.equal(plays[0].start, 1);
 
   // Controls from the owning tab are relayed to offscreen too.
   deliver(chrome, { type: "seek", index: 1 }, 1);
   deliver(chrome, { type: "set-speed", speed: 1.5 }, 1);
   await tick();
-  const relayed = chrome.calls.runtimeMessages.slice(2);
+  const relayed = chrome.calls.runtimeMessages.slice(1);
   assert.deepEqual(
     relayed.map((m) => [m.type, m.target]),
     [
@@ -432,5 +433,25 @@ test("a tab that lost ownership while the document loaded does not play", async 
   assert.deepEqual(
     plays(chrome).map((m) => m.tabId),
     [2],
+  );
+});
+
+test("a slower earlier play from the same tab is dropped after a newer one", async () => {
+  const chrome = fakeChrome();
+  // The first settings load is slow, the second fast: the older play completes last.
+  const delays = [30, 0];
+  createBackground(chrome, {
+    loadSettings: async () => {
+      await new Promise((r) => setTimeout(r, delays.shift() ?? 0));
+      return { baseUrl: "http://localhost:9000/v1", apiKey: "k", model: "tts-1" };
+    },
+  });
+  deliver(chrome, { ...PLAY, start: 0 }, 1);
+  await new Promise((r) => setTimeout(r, 1));
+  deliver(chrome, { ...PLAY, start: 1 }, 1);
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepEqual(
+    plays(chrome).map((m) => m.start),
+    [1],
   );
 });

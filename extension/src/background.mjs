@@ -122,20 +122,26 @@ export function createBackground(chrome, deps = {}) {
   const reportError = (tabId, err) =>
     toTab(tabId, { type: "state", state: "error", error: err?.message || String(err) });
 
+  // Bumped by every play: a slower earlier play (settings load / document creation) must not be
+  // forwarded after a newer one, even from the same tab.
+  let playGeneration = 0;
+
   async function onPlay(msg, tabId) {
+    const generation = ++playGeneration;
+    const stale = () => generation !== playGeneration;
     try {
       const current = await getOwner();
       if (current !== null && current !== tabId) await toTab(current, { type: "stop" });
       setOwner(tabId);
       const [settings] = await Promise.all([loadSettings(), ensureOffscreen()]);
-      // Another tab took over while settings / the offscreen document were loading.
-      if (ownerSlot.peek() !== tabId) return;
+      // Another tab took over, or a newer play arrived, while settings / the document loaded.
+      if (stale() || ownerSlot.peek() !== tabId) return;
       const { baseUrl, apiKey, model } = settings;
       const { target, ...play } = { ...msg, tabId, settings: { baseUrl, apiKey, model } };
       playbackSlot.set({ play, index: play.start ?? 0, state: "loading" });
       await toOffscreen(play);
     } catch (err) {
-      await reportError(tabId, err);
+      if (!stale()) await reportError(tabId, err);
     }
   }
 
