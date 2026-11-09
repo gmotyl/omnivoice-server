@@ -316,9 +316,9 @@ export function createBar({doc, onAction}) // → {setState(state, error?), setV
 - "stop tears down bar, highlight and listeners"
 - "double injection keeps one session"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `npm run build && npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -m "feat(extension): content reading session"`
+- [x] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `npm run build && npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -m "feat(extension): content reading session"`
 
 ### Task 10: Service worker
 
