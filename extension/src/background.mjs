@@ -130,8 +130,12 @@ export function createBackground(chrome, deps = {}) {
     const generation = ++playGeneration;
     const stale = () => generation !== playGeneration;
     try {
+      // Staleness is checked after every await and before any ownership change: only the newest
+      // play may change the owner, so a superseded one cannot steal it back from a newer play.
       const current = await getOwner();
+      if (stale()) return;
       if (current !== null && current !== tabId) await toTab(current, { type: "stop" });
+      if (stale()) return;
       setOwner(tabId);
       const [settings] = await Promise.all([loadSettings(), ensureOffscreen()]);
       // Another tab took over, or a newer play arrived, while settings / the document loaded.

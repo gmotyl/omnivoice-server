@@ -455,3 +455,29 @@ test("a slower earlier play from the same tab is dropped after a newer one", asy
     [1],
   );
 });
+
+test("a stale play waiting on the stop to the owner does not take ownership from a newer play", async () => {
+  const chrome = fakeChrome();
+  createBackground(chrome);
+  deliver(chrome, { ...PLAY, start: 0 }, 1);
+  await tick();
+  chrome.calls.runtimeMessages.length = 0;
+  // The stop sent to tab 1 is slow, so tab 2's play is still awaiting it when tab 1 plays again.
+  const sendTab = chrome.tabs.sendMessage;
+  chrome.tabs.sendMessage = async (tabId, msg) => {
+    if (msg.type === "stop") await new Promise((r) => setTimeout(r, 30));
+    return sendTab(tabId, msg);
+  };
+  deliver(chrome, { ...PLAY, start: 5 }, 2);
+  await new Promise((r) => setTimeout(r, 1));
+  deliver(chrome, { ...PLAY, start: 7 }, 1);
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepEqual(
+    plays(chrome).map((m) => [m.tabId, m.start]),
+    [[1, 7]],
+  );
+  // Tab 1 still owns the session: its controls reach the player.
+  deliver(chrome, { type: "pause" }, 1);
+  await tick();
+  assert.ok(chrome.calls.runtimeMessages.some((m) => m.type === "pause" && m.tabId === 1));
+});
