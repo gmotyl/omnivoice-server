@@ -33,6 +33,7 @@ export function createPlayer({
   let state = "idle";
   let paused = false; // user paused; survives a sentence still loading
   let ready = false; // audio.src holds a piece of the current sentence
+  let endedWhilePaused = false; // the piece finished as the user paused; resume moves on
   let currentUrl = null;
   let generation = 0;
 
@@ -51,7 +52,11 @@ export function createPlayer({
   function releaseAudio() {
     audio.pause();
     ready = false;
+    endedWhilePaused = false;
     if (currentUrl) {
+      // Detach the revoked blob so the element drops its decoded buffer.
+      audio.removeAttribute?.("src");
+      audio.load?.();
       url.revokeObjectURL(currentUrl);
       currentUrl = null;
     }
@@ -75,6 +80,7 @@ export function createPlayer({
 
   function playPiece(k) {
     piece = k;
+    endedWhilePaused = false;
     if (currentUrl) url.revokeObjectURL(currentUrl);
     currentUrl = url.createObjectURL(new BlobImpl([pieces[k]], { type: "audio/mpeg" }));
     audio.src = currentUrl;
@@ -119,14 +125,20 @@ export function createPlayer({
     setState(finalState);
   }
 
-  audio.addEventListener("ended", () => {
-    if (!sentences || !ready || state !== "playing") return;
+  function pieceEnded() {
     if (currentUrl) {
       url.revokeObjectURL(currentUrl);
       currentUrl = null;
     }
     ready = false;
     next();
+  }
+
+  audio.addEventListener("ended", () => {
+    if (!sentences || !ready) return;
+    if (state === "playing") return pieceEnded();
+    // `ended` raced a pause: resuming would replay the finished piece, so remember it.
+    if (state === "paused") endedWhilePaused = true;
   });
 
   audio.addEventListener("error", () => {
@@ -162,7 +174,10 @@ export function createPlayer({
     resume() {
       if (!sentences || !paused) return;
       paused = false;
-      if (ready) {
+      if (ready && (endedWhilePaused || audio.ended)) {
+        setState("playing");
+        pieceEnded();
+      } else if (ready) {
         startAudio();
         setState("playing");
       } else {

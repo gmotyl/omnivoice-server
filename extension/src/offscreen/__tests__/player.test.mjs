@@ -217,3 +217,49 @@ test("stop clears queue and revokes object urls", async () => {
   await settle();
   assert.equal(urls.created.size, 2);
 });
+
+test("rapid seek emits only the final sentence-start", async () => {
+  const { events, player, playing } = setup();
+  player.play({ sentences, start: 0, voice: "alloy", speed: 1 });
+  await settle();
+  const n = events.length;
+  player.seek(1);
+  player.seek(2);
+  player.seek(3);
+  await settle();
+  assert.deepEqual(
+    events.slice(n).filter((e) => e.type === "sentence-start"),
+    [{ type: "sentence-start", index: 3 }],
+  );
+  assert.equal(playing(), "alloy:3.a");
+  player.stop();
+});
+
+test("resume after the piece ended while paused advances", async () => {
+  const { audio, events, player, playing } = setup();
+  player.play({ sentences, start: 0, voice: "alloy", speed: 1 });
+  await settle();
+  // The piece's `ended` was already queued when the user paused.
+  player.pause();
+  audio.end();
+  await settle();
+  assert.equal(playing(), "alloy:0.a", "nothing advances while paused");
+  player.resume();
+  await settle();
+  assert.equal(playing(), "alloy:0.b", "resume moves on instead of replaying");
+  assert.equal(audio.paused, false);
+  assert.deepEqual(events.at(-1), { type: "state", state: "playing" });
+  player.stop();
+});
+
+test("stop releases the audio element source", async () => {
+  const { audio, player } = setup();
+  let loads = 0;
+  audio.load = () => loads++;
+  player.play({ sentences, start: 0, voice: "alloy", speed: 1 });
+  await settle();
+  assert.notEqual(audio.src, "");
+  player.stop();
+  assert.equal(audio.src, "", "src attribute removed");
+  assert.ok(loads > 0, "load() resets the element");
+});
