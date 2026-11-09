@@ -44,7 +44,7 @@ extension/
   src/options.html / options.mjs
                        baseUrl, apiKey, voice, speed; "Test connection"; permission request
   src/engine.mjs       OpenAI client: listVoices(), speak(text, voice, signal)
-  test/                node --test with linkedom
+  src/**/__tests__/    node --test with linkedom, next to the code under test
   build.mjs            esbuild bundle of content/main.mjs → dist/
   README.md            what it is, requirements, build, Load unpacked in Chrome and Edge,
                        options, using it, troubleshooting, development (test, build, reload)
