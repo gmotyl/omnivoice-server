@@ -11,7 +11,8 @@ spoken is highlighted and scrolled into view, and a small player bar sits on top
   the top.
 - **Selection**: reads exactly the selected text; the player stops at the end, the bar stays
   until **Close**, and Alt+click starts reading again.
-- **Read from here**: starts at the paragraph you right-clicked.
+- **Read from here**: starts at the paragraph you right-clicked. On app pages without an article
+  (Slack, Gmail) it reads only the pane you clicked in: the thread, the open conversation.
 - **Alt+click**: jumps to any paragraph while reading (or starts again there after reading
   finished, until the bar is closed).
 - **Navigation** by sentence, and by paragraph with Shift.
@@ -79,7 +80,12 @@ Start reading with any of:
 - **`Alt+Shift+R`** — the same, or pause / resume when this tab is already reading;
 - the **context menu**: **Read selection** (on selected text) or **Read from here** (on the page,
   a link or an image). Chrome reports no click coordinates for context menus, so "Read from here"
-  starts at the clicked link or image, otherwise at the element under the pointer.
+  starts at the clicked link or image, otherwise at the element under the pointer. When the
+  article found on the page does not hold that point (app pages such as Slack or Gmail, where
+  the "article" is the whole app), it reads only the pane around the point: the nearest
+  scrolling box or landmark (`main`, `role="main"`, `region`, `dialog`, `complementary`, `feed`,
+  `log`) with at least ~200 characters of text, so a Slack thread or the open Gmail conversation
+  rather than the channel list.
 
 The player bar:
 
@@ -95,6 +101,7 @@ The player bar:
 Voice and speed changed on the bar apply to the current session only; defaults live in Options.
 The **Autoscroll** toggle is the exception: it is saved and shared with the Options checkbox.
 **Alt+click** a paragraph to jump there (also after the last sentence, until you close the bar).
+Alt+click outside what is being read (another pane of an app page) starts reading that pane there.
 Only one tab reads at a time: starting in another tab stops the first one. Navigating or closing
 the reading tab stops it.
 
@@ -118,6 +125,9 @@ To change the shortcut, open `chrome://extensions/shortcuts` (`edge://extensions
   longer than that resumes from the start of the current sentence rather than mid-sentence.
 - **The page jumps while I scroll around**: turn **Autoscroll** off on the bar (dimmed = off). The
   current sentence stays highlighted; turning it back on scrolls to it right away.
+- **Slack / Gmail reads the sidebar or channel list**: start with **Read from here** (or Alt+click
+  while reading) on the message you want; the icon and the shortcut read the whole "article",
+  which on app pages is the whole app.
 - **Old behaviour after a rebuild**: reload the extension on `chrome://extensions` /
   `edge://extensions`, then reload the page.
 - **Shortcut does nothing**: another extension may own `Alt+Shift+R`; check
@@ -149,7 +159,7 @@ File map:
 | `src/settings.mjs`           | defaults, load / save, speed clamp                                   |
 | `src/options.html`, `src/options.mjs` | options page                                                |
 | `src/content/main.mjs`       | content script entry: picks the source, drives the session, Alt+click |
-| `src/content/source.mjs`     | article (Readability), body fallback, selection                      |
+| `src/content/source.mjs`     | article (Readability), body fallback, pane around a point, selection |
 | `src/content/segment.mjs`    | paragraphs → sentences → ≤400-char pieces                            |
 | `src/content/nav.mjs`        | sentence / paragraph navigation                                      |
 | `src/content/highlight.mjs`  | CSS Custom Highlight of the current sentence, scroll into view       |

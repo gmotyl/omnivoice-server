@@ -3,7 +3,7 @@
 // sends `play` with the sentences' pieces, follows `sentence-start` / `state` from the engine
 // side, and maps player-bar actions and Alt+click to engine messages.
 
-import { articleSentences, selectionSentences, sentenceIndexAt } from './source.mjs';
+import { articleSource, pointSource, selectionSentences, sentenceIndexAt } from './source.mjs';
 import * as nav from './nav.mjs';
 import { createHighlighter } from './highlight.mjs';
 import { createBar } from './bar.mjs';
@@ -114,21 +114,18 @@ export function createController({
     const selection = win.getSelection?.();
     const hasSelection = !!(selection && selection.rangeCount && !selection.isCollapsed);
     if (msg.source === 'selection' || (msg.source === 'auto' && hasSelection)) {
-      return { sentences: selectionSentences(doc, selection, lang), start: 0 };
+      return { sentences: selectionSentences(doc, selection, lang), start: 0, container: null };
     }
-    const sentences = articleSentences(doc, lang);
-    let start = 0;
     if (msg.source === 'from-here') {
-      for (const el of fromHereCandidates(msg)) {
-        const i = sentenceIndexAt(sentences, el);
-        if (i >= 0) {
-          start = i;
-          break;
-        }
-      }
+      // A start at a point reads the article, or on app pages only the pane around the point.
+      const targets = msg.target ? [msg.target] : fromHereCandidates(msg);
+      const picked = pointSource(doc, targets, lang, { getComputedStyle: paneStyle });
+      return { ...picked, start: Math.max(0, picked.start) };
     }
-    return { sentences, start };
+    return { ...articleSource(doc, lang), start: 0 };
   }
+
+  const paneStyle = (el) => win.getComputedStyle?.(el) ?? null;
 
   function play(start) {
     const s = session;
@@ -248,6 +245,8 @@ export function createController({
       autoscroll: true,
       // Index of the highlighted sentence, or null.
       shown: null,
+      // Root the sentences were read from (article, pane), or null for a selection.
+      container: null,
       highlighter: makeHighlighter({ doc, win }),
       bar: null,
       onClick: null,
@@ -256,11 +255,23 @@ export function createController({
     // Capture phase, so the page's own click handlers (links) do not run first.
     s.onClick = (e) => {
       if (!e.altKey || session !== s) return;
-      const i = sentenceIndexAt(s.sentences, e.target);
-      if (i < 0) return;
+      const target = e.target;
+      // The player bar's host sits in the page: its clicks are the bar's own.
+      if (!target || target.closest?.('[data-omnivoice-reader]')) return;
+      const i = sentenceIndexAt(s.sentences, target);
+      if (i >= 0) {
+        e.preventDefault();
+        e.stopPropagation?.();
+        seek(i);
+        return;
+      }
+      // Outside the current source (another pane of an app page): read from there instead.
+      if (s.container && s.container.contains(target)) return;
+      const picked = pointSource(doc, [target], pageLang(doc, win), { getComputedStyle: paneStyle });
+      if (picked.start < 0) return;
       e.preventDefault();
       e.stopPropagation?.();
-      seek(i);
+      start({ type: 'start', source: 'from-here', target });
     };
     doc.addEventListener('click', s.onClick, true);
     return s;
@@ -272,7 +283,7 @@ export function createController({
     if (token !== startToken) return;
     const { list, voice } = await resolveVoice(settings.voice);
     if (token !== startToken) return;
-    const { sentences, start: from } = pickSentences(msg);
+    const { sentences, start: from, container } = pickSentences(msg);
 
     // A new start while a session runs reuses its bar and listener.
     const running = Boolean(session);
@@ -280,6 +291,7 @@ export function createController({
     else session = createSession(voice, settings.speed);
     session.startMsg = msg;
     session.sentences = sentences;
+    session.container = container;
     session.voice = voice;
     session.speed = settings.speed;
     session.bar.setVoices(list, voice);

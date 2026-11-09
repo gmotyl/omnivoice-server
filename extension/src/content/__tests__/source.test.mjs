@@ -1,7 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseHTML } from 'linkedom';
-import { articleContainer, articleSentences, selectionSentences, sentenceIndexAt } from '../source.mjs';
+import {
+  articleContainer,
+  articleSentences,
+  selectionSentences,
+  sentenceIndexAt,
+  paneContainer,
+  paneSentences,
+  pointSource,
+} from '../source.mjs';
+import { SLACK, GMAIL, CHANNELS, LABELS, scrollPanes } from './app-pages.mjs';
 import { installTextRange } from './fake-range.mjs';
 
 function dom(body, lang = 'en') {
@@ -244,4 +253,74 @@ test('article header and footer inside the article are read', () => {
   assert.ok(texts.some((t) => t.includes('By Author')), texts.join(' | '));
   assert.ok(texts.some((t) => t.includes('Tags')), texts.join(' | '));
   assert.ok(!texts.some((t) => t.includes('Copyright') || t.includes('Home')), texts.join(' | '));
+});
+
+test('paneSentences reads only the clicked scroll pane of a Slack-like page', () => {
+  const doc = dom(SLACK);
+  const getComputedStyle = scrollPanes(doc);
+  const target = doc.querySelector('#t2 .text');
+  assert.equal(paneContainer(target, { getComputedStyle }).id, 'thread');
+  const texts = paneSentences(doc, target, 'en', { getComputedStyle }).map((s) => s.text);
+  assert.ok(texts.some((t) => t.startsWith('Proposal')), texts.join(' | '));
+  for (const noise of [...CHANNELS, 'Acme workspace', 'nightly build', 'Thread in engineering']) {
+    assert.ok(!texts.some((t) => t.includes(noise)), `${noise} leaked: ${texts.join(' | ')}`);
+  }
+});
+
+test('from-here on a Slack-like thread starts at the clicked message and stays in the thread', () => {
+  const doc = dom(SLACK);
+  const getComputedStyle = scrollPanes(doc);
+  const target = doc.querySelector('#t2 .text');
+  const { container, sentences, start } = pointSource(doc, [target], 'en', { getComputedStyle });
+  assert.equal(container.id, 'thread');
+  const texts = sentences.map((s) => s.text);
+  assert.match(texts[start], /^Dee$|^Thursday works/, texts.join(' | '));
+  assert.ok(texts.slice(start).some((t) => t.startsWith('Thursday works')), texts.join(' | '));
+  assert.ok(texts.slice(start).some((t) => t.startsWith('Agreed')), texts.join(' | '));
+  assert.ok(!texts.some((t) => CHANNELS.some((c) => t.includes(c))), texts.join(' | '));
+});
+
+test('from-here on a Gmail-like conversation reads the main region, not the label nav', () => {
+  const doc = dom(GMAIL);
+  // No scroll boxes at all: the role=main landmark is the pane.
+  const getComputedStyle = () => ({ overflowY: 'visible' });
+  const target = doc.querySelector('#m2 .text');
+  assert.equal(paneContainer(target, { getComputedStyle }).id, 'main');
+  const { sentences, start } = pointSource(doc, [target], 'en', { getComputedStyle });
+  const texts = sentences.map((s) => s.text);
+  assert.ok(start >= 0);
+  assert.ok(texts.slice(start, start + 3).some((t) => t.startsWith('Thanks Fay')), texts.join(' | '));
+  assert.ok(texts.some((t) => t.startsWith('Looks good')), texts.join(' | '));
+  for (const noise of [...LABELS, 'Archive', 'Report spam']) {
+    assert.ok(!texts.some((t) => t.includes(noise)), `${noise} leaked: ${texts.join(' | ')}`);
+  }
+});
+
+test('a pane with too little text climbs to the next pane', () => {
+  const doc = dom(`<div id="outer" data-scroll="1">
+    ${[1, 2, 3].map(longParagraph).join('')}
+    <div id="inner" data-scroll="1"><p id="short">A short scroll box. Only a line.</p></div>
+  </div>`);
+  const getComputedStyle = scrollPanes(doc);
+  assert.equal(paneContainer(doc.getElementById('short'), { getComputedStyle }).id, 'outer');
+  // Not scrollable in the real layout (no vertical overflow) → not a pane.
+  Object.defineProperty(doc.getElementById('outer'), 'scrollHeight', { value: 500 });
+  assert.equal(paneContainer(doc.getElementById('short'), { getComputedStyle }), doc.body);
+});
+
+test('from-here inside a real article keeps reading the article', () => {
+  const doc = dom(`<nav><a href="/">Home</a></nav>
+    <main id="main"><article id="art">${[1, 2, 3, 4, 5].map(longParagraph).join('')}</article></main>`);
+  const getComputedStyle = () => ({ overflowY: 'visible' });
+  const target = doc.querySelectorAll('#art p')[2];
+  const { container, sentences, start } = pointSource(doc, [target], 'en', { getComputedStyle });
+  assert.equal(container.id, 'art');
+  assert.match(sentences[start].text, /^Paragraph 3 talks/);
+});
+
+test('pointSource reports start -1 when no target resolves', () => {
+  const doc = dom(`<article>${[1, 2, 3, 4, 5].map(longParagraph).join('')}</article>`);
+  const { sentences, start } = pointSource(doc, [], 'en', {});
+  assert.ok(sentences.length > 0);
+  assert.equal(start, -1);
 });

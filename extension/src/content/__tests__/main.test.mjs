@@ -4,6 +4,7 @@ import { parseHTML } from 'linkedom';
 import { createController, install } from '../main.mjs';
 import { createBar } from '../bar.mjs';
 import { installTextRange } from './fake-range.mjs';
+import { SLACK, CHANNELS, scrollPanes } from './app-pages.mjs';
 
 const longParagraph = (n) =>
   `<p id="p${n}">Paragraph ${n} talks about the topic at length, with commas, details, and more words so that it scores well. ` +
@@ -454,4 +455,49 @@ test('autoscroll toggle on the bar saves the setting and stops scrolling', async
   assert.equal(highlighter.shown, c.session.sentences[2]);
   assert.equal(highlighter.opts.scroll, true);
   assert.equal(ofType(chrome.sent, 'autoscroll').length, 0, 'nothing sent to the engine');
+});
+
+// A Slack-like page with fake layout, and "Read from here" on the hovered element.
+function slackSetup(hoveredId) {
+  const t = setup({ page: SLACK });
+  t.win.getComputedStyle = scrollPanes(t.document);
+  const qsa = t.document.querySelectorAll.bind(t.document);
+  t.document.querySelectorAll = (sel) =>
+    sel === ':hover' ? [t.document.body, t.document.querySelector(`#${hoveredId} .text`)] : qsa(sel);
+  return t;
+}
+
+test('from-here on an app page reads only the clicked pane', async () => {
+  const t = slackSetup('t2');
+  const c = install(t.win, t.deps);
+  await c.handle({ type: 'start', source: 'from-here' });
+  const [play] = ofType(t.chrome.sent, 'play');
+  const texts = play.sentences.map((p) => p.join(' '));
+  assert.ok(texts.slice(play.start, play.start + 2).some((x) => x.startsWith('Thursday works')), texts.join(' | '));
+  assert.ok(!texts.some((x) => CHANNELS.some((ch) => x.includes(ch))), texts.join(' | '));
+  assert.ok(!texts.some((x) => x.includes('nightly build')), texts.join(' | '));
+});
+
+test('alt+click outside the current source starts reading that pane', async () => {
+  const t = slackSetup('t2');
+  const c = install(t.win, t.deps);
+  await c.handle({ type: 'start', source: 'from-here' });
+  c.handle({ type: 'state', state: 'playing' });
+
+  // On the player bar (a page-level host element): ignored.
+  const host = t.document.querySelector('[data-omnivoice-reader="bar"]');
+  assert.equal(altClick(t.document, host).defaultPrevented, false);
+  assert.equal(ofType(t.chrome.sent, 'play').length, 1);
+
+  const ev = altClick(t.document, t.document.querySelector('#c2 .text'));
+  assert.equal(ev.defaultPrevented, true);
+  await new Promise((r) => setImmediate(r));
+  const plays = ofType(t.chrome.sent, 'play');
+  assert.equal(plays.length, 2);
+  const last = plays.at(-1);
+  const texts = last.sentences.map((p) => p.join(' '));
+  assert.ok(texts.slice(last.start, last.start + 2).some((x) => x.startsWith('I can take a look')), texts.join(' | '));
+  assert.ok(!texts.some((x) => x.includes('Thursday works')), texts.join(' | '));
+  assert.equal(t.bars.length, 1, 'the running bar is reused');
+  assert.equal(ofType(t.chrome.sent, 'seek').length, 0);
 });

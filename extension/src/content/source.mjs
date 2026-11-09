@@ -1,5 +1,6 @@
 // Reading sources: the article container (Readability, read in place), the <body>
-// fallback, and the current selection. All ranges point into the live DOM.
+// fallback, the pane around a clicked point (app pages such as Slack or Gmail, where no
+// article exists), and the current selection. All ranges point into the live DOM.
 
 import { Readability } from '@mozilla/readability';
 import { segment, cutPieces, BLOCK_SELECTOR } from './segment.mjs';
@@ -121,14 +122,95 @@ function inChromeWithin(node, container) {
   return false;
 }
 
-export function articleSentences(doc, lang, options = {}) {
+// Sentences of a container, without the page chrome inside it: the <body> fallback, a
+// wrapper such as div#page when Readability keeps a short sibling next to the article, or an
+// app pane holding its own toolbar.
+function containerSentences(doc, container, lang) {
   lang = lang || doc.documentElement.getAttribute('lang') || undefined;
-  const container = articleContainer(doc, options);
   const sentences = segment(container, { lang, doc });
-  // Page chrome inside the container is not read: the <body> fallback, or a wrapper such as
-  // div#page when Readability keeps a short sibling next to the article.
   const kept = sentences.filter((s) => !inChromeWithin(s.range.startContainer, container));
   return kept.length === sentences.length ? sentences : renumber(kept);
+}
+
+// {container, sentences} of the article (or the <body> fallback).
+export function articleSource(doc, lang, options = {}) {
+  const container = articleContainer(doc, options);
+  return { container, sentences: containerSentences(doc, container, lang) };
+}
+
+export function articleSentences(doc, lang, options = {}) {
+  return articleSource(doc, lang, options).sentences;
+}
+
+// Pane = a region of an app page that the user reads on its own: a scroll container
+// (vertical overflow that actually overflows) or a landmark. `article` is left out on
+// purpose: apps wrap single messages in it, and real articles are Readability's job.
+const PANE_SELECTOR =
+  'main, [role="main"], [role="region"], [role="dialog"], [role="complementary"], [role="feed"], [role="log"]';
+const SCROLLING = new Set(['auto', 'scroll', 'overlay']);
+// A candidate with less text than this is a message bubble or a widget, not a pane: climb on.
+export const MIN_PANE_TEXT = 200;
+
+function isScrollContainer(el, getStyle) {
+  let style = null;
+  try {
+    style = getStyle ? getStyle(el) : null;
+  } catch {
+    style = null;
+  }
+  return !!style && SCROLLING.has(style.overflowY) && el.scrollHeight > el.clientHeight;
+}
+
+function textLength(el) {
+  return (el.textContent || '').replace(/\s+/g, ' ').trim().length;
+}
+
+// The nearest pane holding the target with at least `minText` characters, else <body>.
+// getComputedStyle is injectable (tests have no layout); the default is the browser's.
+export function paneContainer(
+  target,
+  { getComputedStyle = globalThis.getComputedStyle, minText = MIN_PANE_TEXT } = {},
+) {
+  let el = target && (target.nodeType === ELEMENT_NODE ? target : target.parentElement);
+  const doc = el && el.ownerDocument;
+  const body = doc ? doc.body : null;
+  for (; el && el !== body && el !== doc.documentElement; el = el.parentElement) {
+    if (!el.matches(PANE_SELECTOR) && !isScrollContainer(el, getComputedStyle)) continue;
+    if (textLength(el) >= minText) return el;
+  }
+  return body;
+}
+
+export function paneSentences(doc, target, lang, options = {}) {
+  return containerSentences(doc, paneContainer(target, options), lang);
+}
+
+// Source for a start at a point ("Read from here", Alt+click): {container, sentences, start}.
+// The article is read when it holds the target and is not wider than the target's pane (an
+// article in a scrolling <main>); otherwise, e.g. Readability fell back to <body> or picked a
+// whole app wrapper on Slack or Gmail, only the pane is read. The first target that resolves
+// wins; start is -1 (with the article's sentences) when none does.
+export function pointSource(doc, targets, lang, options = {}) {
+  const article = articleSource(doc, lang, options);
+  const body = doc.body;
+  for (const target of targets) {
+    if (!target) continue;
+    const pane = paneContainer(target, options);
+    const tries = [];
+    const articleFits =
+      article.container !== body &&
+      article.container.contains(target) &&
+      (!pane || pane === body || pane.contains(article.container));
+    if (articleFits) tries.push(() => article);
+    if (pane && pane !== body) tries.push(() => ({ container: pane, sentences: containerSentences(doc, pane, lang) }));
+    tries.push(() => article);
+    for (const make of tries) {
+      const source = make();
+      const start = sentenceIndexAt(source.sentences, target);
+      if (start >= 0) return { ...source, start };
+    }
+  }
+  return { ...article, start: -1 };
 }
 
 function indexOf(node) {
@@ -243,9 +325,10 @@ export function sentenceIndexAt(sentences, node) {
   for (let i = 0; i < sentences.length; i++) {
     if (insideRange(node, sentences[i].range)) return paragraphStart(sentences, i);
   }
-  // e.g. a click on the paragraph element itself or on whitespace between sentences
+  // e.g. a click on the paragraph element itself or on whitespace between sentences, or on
+  // an element that is not a listed block but holds text (an app's message <div>)
   const el = node.nodeType === ELEMENT_NODE ? node : node.parentElement;
-  const block = el && el.closest(BLOCK_SELECTOR);
+  const block = el && (el.closest(BLOCK_SELECTOR) || el);
   if (!block) return -1;
   const i = sentences.findIndex((s) => block.contains(s.range.startContainer));
   return i < 0 ? -1 : paragraphStart(sentences, i);
