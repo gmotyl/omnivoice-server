@@ -49,9 +49,9 @@ All commands run in `extension/`. Test command: `npm test` (= `node --test src/`
 - "no remote script is referenced"
 - "every manifest path exists after build"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm install && npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `npm run build && npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git add extension && git commit -m "feat(extension): scaffold MV3 manifest and build"`
+- [x] **Step 1: Write the failing tests** — Run: `npm install && npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `npm run build && npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git add extension && git commit -m "feat(extension): scaffold MV3 manifest and build"`
 
 ### Task 2: Engine client
 

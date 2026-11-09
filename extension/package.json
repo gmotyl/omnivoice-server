@@ -1,0 +1,21 @@
+{
+  "name": "omnivoice-reader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome/Edge MV3 extension that reads pages aloud through an OpenAI-compatible /audio/speech engine",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"src/**/*.test.mjs\"",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "linkedom": "^0.18.0"
+  }
+}
