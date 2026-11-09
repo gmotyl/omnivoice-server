@@ -201,3 +201,22 @@ test('hard cut keeps pieces within the limit', () => {
   }
   assert.equal(emojiPieces.join(''), emoji);
 });
+
+test('table header cells and rows are separate runs', () => {
+  const doc = dom(`<table id="root"><caption>People</caption><tr><th>Name</th><th>Age</th></tr><tr><td>Ann</td><td>30</td></tr></table>`);
+  const sentences = segment(doc.getElementById('root'), { lang: 'en', doc });
+  assert.deepEqual(sentences.map((s) => s.text), ['People', 'Name', 'Age', 'Ann', '30']);
+  for (const s of sentences) assert.equal(norm(s.range.toString()), s.text);
+});
+
+test('form controls are not read', () => {
+  const doc = dom(`<div id="root"><p>Choose an option.</p><button>Save</button><button>Cancel</button><label>Pick</label><select><option>One</option><option>Two</option></select><textarea>Draft</textarea><p>After the form.</p></div>`);
+  const sentences = segment(doc.getElementById('root'), { lang: 'en', doc });
+  assert.deepEqual(sentences.map((s) => s.text), ['Choose an option.', 'After the form.']);
+});
+
+test('lists break runs between items and surrounding text', () => {
+  const doc = dom(`<div id="root">Lead text<ul><li>One</li></ul>tail text<dl><dt>Term</dt><dd>Meaning</dd></dl></div>`);
+  const sentences = segment(doc.getElementById('root'), { lang: 'en', doc });
+  assert.deepEqual(sentences.map((s) => s.text), ['Lead text', 'One', 'tail text', 'Term', 'Meaning']);
+});

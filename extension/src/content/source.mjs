@@ -9,13 +9,6 @@ const CHROME_SELECTOR = 'nav, header, footer, aside';
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 
-function hasOwnText(el) {
-  for (const child of el.childNodes) {
-    if (child.nodeType === TEXT_NODE && /\S/.test(child.data)) return true;
-  }
-  return false;
-}
-
 function commonAncestor(elements) {
   let lca = elements[0];
   for (const el of elements) {
@@ -24,8 +17,26 @@ function commonAncestor(elements) {
   return lca;
 }
 
-// Readability runs on a clone whose body elements carry their index; the elements it
-// keeps are mapped back to the live DOM and their deepest common ancestor is the container.
+// Pair every text node of the clone with its live twin (the trees are identical right after
+// cloneNode). Readability mostly moves nodes, so a text node it keeps still maps back.
+function pairTextNodes(cloneRoot, liveRoot) {
+  const pairs = new Map();
+  const stack = [[cloneRoot, liveRoot]];
+  while (stack.length) {
+    const [c, l] = stack.pop();
+    const cc = c.childNodes;
+    const lc = l.childNodes;
+    for (let i = 0; i < cc.length && i < lc.length; i++) {
+      if (cc[i].nodeType === TEXT_NODE) pairs.set(cc[i], lc[i]);
+      else if (cc[i].nodeType === ELEMENT_NODE) stack.push([cc[i], lc[i]]);
+    }
+  }
+  return pairs;
+}
+
+// Readability runs on a clone. Each text node it keeps is mapped back to the live DOM: by
+// identity when it was moved, else (new <p> wrappers, the innerHTML retry path) through the
+// index mark of its nearest marked ancestor. The deepest common ancestor is the container.
 export function articleContainer(doc, { Readability: Reader = Readability } = {}) {
   const body = doc.body;
   const live = [...body.querySelectorAll('*')];
@@ -33,6 +44,7 @@ export function articleContainer(doc, { Readability: Reader = Readability } = {}
   const cloned = [...clone.body.querySelectorAll('*')];
   if (cloned.length !== live.length) return body;
   cloned.forEach((el, i) => el.setAttribute(MARK, String(i)));
+  const pairs = pairTextNodes(clone.body, body);
 
   let article = null;
   try {
@@ -44,10 +56,22 @@ export function articleContainer(doc, { Readability: Reader = Readability } = {}
   const content = article && article.content;
   if (!content || typeof content.querySelectorAll !== 'function') return body;
 
-  const kept = [...content.querySelectorAll(`[${MARK}]`)];
   const toLive = (el) => live[Number(el.getAttribute(MARK))];
-  const textHolders = kept.filter(hasOwnText).map(toLive).filter(Boolean);
-  const candidates = textHolders.length ? textHolders : kept.map(toLive).filter(Boolean);
+  const textHolders = [];
+  for (const text of textNodesUnder(content)) {
+    if (!/\S/.test(text.data)) continue;
+    const twin = pairs.get(text);
+    if (twin && twin.parentElement && body.contains(twin)) {
+      textHolders.push(twin.parentElement);
+      continue;
+    }
+    const marked = text.parentElement && text.parentElement.closest(`[${MARK}]`);
+    const holder = marked && content.contains(marked) ? toLive(marked) : null;
+    if (holder) textHolders.push(holder);
+  }
+  const candidates = textHolders.length
+    ? textHolders
+    : [...content.querySelectorAll(`[${MARK}]`)].map(toLive).filter(Boolean);
   if (!candidates.length) return body;
 
   const container = commonAncestor(candidates);

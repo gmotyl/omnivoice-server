@@ -144,3 +144,40 @@ test('body fallback reads bare text in containers', () => {
   const sentences = articleSentences(doc, 'en', { Readability: NullReadability });
   assert.deepEqual(sentences.map((s) => s.text), ['Bare text.', 'Second.', 'Para text.']);
 });
+
+test('articleContainer maps text sitting directly in divs back to the live article', () => {
+  // Readability wraps bare div text in new <p> elements and replaces the divs, so the
+  // kept text holders are not the marked clone elements themselves.
+  const div = (n) =>
+    `<div>Div ${n}. Text that talks about the topic at length, with commas, details, and more words so that it scores well. ` +
+    `It keeps going for a while longer here, adding context, examples, and filler.</div>`;
+  const doc = dom(`
+    <nav><a href="/">Home</a> <a href="/x">X</a></nav>
+    <div id="outer"><div id="content">${[1, 2, 3, 4].map(div).join('')}</div></div>
+    <p id="brp">First line.<br>Second line.</p>`);
+  // Readability keeps the short #brp sibling too, so the honest container spans both
+  const container = articleContainer(doc);
+  assert.notEqual(container, doc.getElementById('brp'));
+  assert.ok(container.contains(doc.getElementById('content')));
+
+  // without that sibling the container is exactly the div holding the text
+  const doc2 = dom(`
+    <nav><a href="/">Home</a> <a href="/x">X</a></nav>
+    <div id="outer"><div id="content">${[1, 2, 3, 4].map(div).join('')}</div></div>`);
+  assert.equal(articleContainer(doc2), doc2.getElementById('content'));
+  const sentences = articleSentences(doc2, 'en');
+  assert.equal(sentences[0].text, 'Div 1.');
+  assert.ok(sentences.some((s) => s.text === 'Div 4.'));
+  assert.deepEqual([...new Set(sentences.map((s) => s.paragraph))], [0, 1, 2, 3]);
+});
+
+test('selection ending at the start of the next paragraph stops before it', () => {
+  // triple-click shape: (text, 0) → (next <p>, 0)
+  const doc = dom(`<p id="a">First chosen. Second chosen.</p><p id="b">Not chosen.</p>`);
+  const a = doc.getElementById('a').firstChild;
+  const selection = fakeSelection(a, 0, doc.getElementById('b'), 0);
+  const sentences = selectionSentences(doc, selection, 'en');
+  assert.deepEqual(sentences.map((s) => s.text), ['First chosen.', 'Second chosen.']);
+  assert.equal(sentences[1].range.endContainer, a);
+  assert.equal(sentences[1].range.endOffset, a.data.length);
+});

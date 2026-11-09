@@ -7,17 +7,23 @@
 
 const BLOCK_TAGS = new Set([
   'P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
-  'BLOCKQUOTE', 'PRE', 'TD', 'DD', 'FIGCAPTION',
+  'BLOCKQUOTE', 'PRE', 'TD', 'TH', 'CAPTION', 'DD', 'FIGCAPTION',
 ]);
-export const BLOCK_SELECTOR = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, dd, figcaption';
+export const BLOCK_SELECTOR = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, th, caption, dd, figcaption';
 // Generic block containers: not paragraphs themselves, but their direct text (outside any
 // listed block) forms its own run, and they always break a run, e.g. `<div>Bare text.</div>`.
 const CONTAINER_TAGS = new Set([
   'BODY', 'DIV', 'SECTION', 'ARTICLE', 'MAIN', 'HEADER', 'FOOTER', 'NAV', 'ASIDE', 'FIGURE',
   'ADDRESS', 'DETAILS', 'SUMMARY', 'DT', 'FORM', 'FIELDSET', 'CENTER',
+  'UL', 'OL', 'DL', 'TABLE', 'TBODY', 'THEAD', 'TFOOT', 'TR',
 ]);
-const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
-const SKIP_SELECTOR = 'script, style, noscript, template, [aria-hidden="true"]';
+// Never read: non-content elements and form controls (their labels and option lists are UI).
+const SKIP_TAGS = new Set([
+  'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE',
+  'BUTTON', 'SELECT', 'OPTION', 'OPTGROUP', 'TEXTAREA', 'LABEL', 'INPUT',
+]);
+const SKIP_SELECTOR =
+  'script, style, noscript, template, button, select, option, optgroup, textarea, label, input, [aria-hidden="true"]';
 
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
@@ -68,7 +74,7 @@ function collectRuns(root) {
       } else if (child.nodeType === ELEMENT_NODE) {
         if (isSkipped(child)) continue;
         if (child.tagName === 'BR') {
-          // a line break separates words (and so sentences); trimming keeps it out of ranges
+          // a line break separates words (it is whitespace to the segmenter); trimming keeps it out of ranges
           if (current) current.text += '\n';
         } else if (BLOCK_TAGS.has(child.tagName)) {
           flush();
