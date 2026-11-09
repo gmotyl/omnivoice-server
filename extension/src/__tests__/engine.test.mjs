@@ -114,3 +114,32 @@ test("trailing slash in baseUrl is normalised", async () => {
   assert.equal(f.calls[1].url, "http://localhost:8000/v1/audio/voices");
   for (const c of f.calls) assert.equal(c.url.replace("://", "").includes("//"), false);
 });
+
+// Fake response whose body read aborts once the signal fires, like a real body stream.
+function abortingBody(status, ctrl) {
+  const fail = async () => {
+    ctrl.abort();
+    throw new DOMException("The operation was aborted.", "AbortError");
+  };
+  return { ok: status >= 200 && status < 300, status, text: fail, arrayBuffer: fail, json: fail };
+}
+
+test("speak abort while reading an error body rejects with AbortError", async () => {
+  const ctrl = new AbortController();
+  const f = fakeFetch(() => abortingBody(400, ctrl));
+  await assert.rejects(speak(settings, { text: "a", voice: "v" }, ctrl.signal, f), (err) => {
+    assert.equal(err.name, "AbortError");
+    assert.equal(err instanceof EngineError, false);
+    return true;
+  });
+});
+
+test("speak abort while reading the audio body rejects with AbortError", async () => {
+  const ctrl = new AbortController();
+  const f = fakeFetch(() => abortingBody(200, ctrl));
+  await assert.rejects(speak(settings, { text: "a", voice: "v" }, ctrl.signal, f), (err) => {
+    assert.equal(err.name, "AbortError");
+    assert.equal(err instanceof EngineError, false);
+    return true;
+  });
+});

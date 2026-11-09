@@ -20,8 +20,12 @@ function headers(settings, extra = {}) {
 }
 
 // Prefer the OpenAI-style `error.message` from a JSON body, else the raw text.
+// An AbortError while reading the body is rethrown so an abort never turns into an EngineError.
 async function errorMessage(res) {
-  const text = await res.text().catch(() => "");
+  const text = await res.text().catch((err) => {
+    if (err?.name === "AbortError") throw err;
+    return "";
+  });
   try {
     const body = JSON.parse(text);
     const msg = body?.error?.message ?? (typeof body?.error === "string" ? body.error : undefined);
@@ -40,7 +44,11 @@ export async function speak(settings, { text, voice }, signal, fetchImpl = fetch
     body: JSON.stringify({ model: settings.model, input: text, voice }),
     signal,
   });
-  if (!res.ok) throw new EngineError(res.status, await errorMessage(res));
+  if (!res.ok) {
+    const message = await errorMessage(res);
+    signal?.throwIfAborted();
+    throw new EngineError(res.status, message);
+  }
   return res.arrayBuffer();
 }
 
