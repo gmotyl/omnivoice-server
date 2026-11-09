@@ -73,26 +73,37 @@ test("setVoice discards cached audio", async () => {
   const { calls, fetchAudio } = fakeFetch();
   const q = createQueue({ fetchAudio });
   q.load(sentences, "alloy");
-  const p = q.get(0);
+  const p = q.get(4); // window 4..7
   await resolveAll(calls);
   await p;
-  const doneCount = calls.length;
-  q.get(4); // window 4..7 — 4..3 overlap nothing; 4..7 in flight
+  assert.deepEqual(firstPieces(calls), [4, 5, 6, 7]);
+  const settledCount = calls.length;
+  // Sentences 4..7 are settled (cached); setVoice must drop them too, not only in-flight ones.
+  q.setVoice("nova");
   await tick();
-  const inFlight = calls.slice(doneCount);
+  const refetched = calls.slice(settledCount);
+  assert.deepEqual(firstPieces(refetched), [4, 5, 6, 7]);
+  assert.ok(refetched.every((c) => c.voice === "nova"));
+  // get(4) resolves with the new-voice audio, not the cached alloy audio.
+  const p4 = q.get(4);
+  await resolveAll(calls);
+  await p4;
+  assert.ok(calls.slice(settledCount).some((c) => c.text === "4.a" && c.voice === "nova"));
+  assert.ok(calls.slice(settledCount).every((c) => c.voice === "nova"));
+  q.clear();
+});
+
+test("setVoice aborts in-flight requests", async () => {
+  const { calls, fetchAudio } = fakeFetch();
+  const q = createQueue({ fetchAudio });
+  q.load(sentences, "alloy");
+  q.get(4);
+  await tick();
+  const inFlight = [...calls];
   q.setVoice("nova");
   await tick();
   assert.ok(inFlight.every((c) => c.signal.aborted), "in-flight requests aborted");
-  const refetched = calls.slice(doneCount + inFlight.length);
-  assert.deepEqual(firstPieces(refetched), [4, 5, 6, 7]);
-  assert.ok(refetched.every((c) => c.voice === "nova"));
-  // Previously cached sentence 0 is refetched with the new voice.
-  const before = calls.length;
-  q.get(0);
-  await tick();
-  const again = calls.slice(before);
-  assert.equal(again[0].text, "0.a");
-  assert.equal(again[0].voice, "nova");
+  assert.deepEqual(firstPieces(calls.slice(inFlight.length)), [4, 5, 6, 7]);
   q.clear();
 });
 
@@ -117,17 +128,33 @@ test("clear aborts everything", async () => {
   const { calls, fetchAudio } = fakeFetch();
   const q = createQueue({ fetchAudio });
   q.load(sentences, "alloy");
+  const p = q.get(0); // window 0..3
+  await resolveAll(calls);
+  await p;
+  q.clear();
+  const n = calls.length;
+  // Sentence 1 was settled inside the old window 0..3; after clear it must be fetched again.
+  q.get(1);
+  await tick();
+  const fresh = calls.slice(n);
+  assert.ok(fresh.some((c) => c.text === "1.a"), "sentence 1 refetched after clear");
+  // Everything now in flight is aborted by clear.
+  q.clear();
+  assert.ok(fresh.length > 0 && fresh.every((c) => c.signal.aborted));
+});
+
+test("get evicts the previous settled sentence", async () => {
+  const { calls, fetchAudio } = fakeFetch();
+  const q = createQueue({ fetchAudio });
+  q.load(sentences, "alloy");
   const p = q.get(0);
   await resolveAll(calls);
   await p;
-  q.get(10);
+  q.get(1); // window 1..4 — settled sentence 0 falls out and is evicted
   await tick();
   const n = calls.length;
-  q.clear();
-  assert.ok(calls.filter((c) => !c.done).every((c) => c.signal.aborted));
-  // Cache is empty: a previously fetched sentence is requested again.
   q.get(0);
   await tick();
-  assert.equal(calls[n].text, "0.a");
+  assert.equal(calls[n].text, "0.a", "sentence 0 fetched again after eviction");
   q.clear();
 });
