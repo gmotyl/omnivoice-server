@@ -183,9 +183,9 @@ export function prevParagraph(sentences, i) // → start of current paragraph; i
 - "prev at the first sentence stays at 0"
 - "next and nextParagraph at the end return null"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -m "feat(extension): sentence and paragraph navigation"`
+- [x] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -m "feat(extension): sentence and paragraph navigation"`
 
 ### Task 6: Sentence queue
 
