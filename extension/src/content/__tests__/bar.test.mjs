@@ -92,3 +92,34 @@ test('destroy removes the bar', () => {
   assert.equal(host.parentNode, null);
   assert.equal(document.body.children.length, 1);
 });
+
+test('bar host is a custom element reset against page CSS', () => {
+  const { attached } = setup();
+  const { host, root } = attached[0];
+  // Not a div, so page rules like `div { display: none }` never match it.
+  assert.equal(host.tagName.toLowerCase(), 'omnivoice-reader-bar');
+  assert.equal(host.getAttribute('data-omnivoice-reader'), 'bar');
+  // Inline !important beats any page stylesheet rule on the host (transform, border, …).
+  assert.match(host.getAttribute('style'), /all:\s*initial\s*!important/);
+  // The bar's own positioning lives inside the shadow root.
+  assert.match(root.querySelector('style').textContent, /position:\s*fixed/);
+});
+
+test('transport icons are inline SVG, not font glyphs', () => {
+  const { attached, bar } = setup();
+  const { root } = attached[0];
+  const glyphs = /[⏮⏭⏸▶]/;
+  for (const label of ['Previous', 'Play', 'Next']) {
+    const btn = root.querySelector(`button[aria-label="${label}"]`);
+    assert.ok(btn.querySelector('svg'), `${label} has no svg`);
+    assert.equal(btn.querySelector('svg').getAttribute('aria-hidden'), 'true');
+    assert.doesNotMatch(btn.textContent, glyphs);
+  }
+  bar.setState('playing');
+  const toggle = root.querySelector('button.toggle');
+  assert.equal(toggle.getAttribute('aria-label'), 'Pause');
+  assert.ok(toggle.querySelector('svg'));
+  assert.doesNotMatch(toggle.textContent, glyphs);
+  // No remote assets: icons are drawn from paths, never <image> or <use href>.
+  assert.equal(root.querySelectorAll('image, use, img').length, 0);
+});

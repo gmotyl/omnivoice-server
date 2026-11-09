@@ -34,6 +34,20 @@ export function createHighlighter({
     return node && node.nodeType === 1 ? node : node?.parentElement ?? node?.parentNode ?? null;
   }
 
+  // Centre the sentence's block; but when that block is taller than the viewport, centring
+  // it can leave the sentence off-screen, so scroll the window by the sentence's own offset.
+  // (Measured up front: after a smooth scrollIntoView the rect is not updated yet.)
+  function scrollToSentence(range, rect) {
+    const target = scrollTarget(range);
+    const block = target?.getBoundingClientRect?.();
+    if (block && block.height > win.innerHeight && win.scrollBy) {
+      const top = Math.round((rect.top + rect.bottom) / 2 - win.innerHeight / 2);
+      win.scrollBy({ top, behavior: 'smooth' });
+      return;
+    }
+    target?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }
+
   function show(sentence) {
     ensureStyle();
     if (!current) current = new Highlight();
@@ -41,9 +55,7 @@ export function createHighlighter({
     current.add(sentence.range);
     highlights.set(NAME, current);
     const rect = sentence.range.getBoundingClientRect();
-    if (isOffScreen(rect)) {
-      scrollTarget(sentence.range)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-    }
+    if (isOffScreen(rect)) scrollToSentence(sentence.range, rect);
   }
 
   function clear() {

@@ -1,5 +1,21 @@
 // Player bar: one host element with a closed shadow root, so page CSS cannot style it
-// and page scripts cannot reach its controls.
+// and page scripts cannot reach its controls. The host is a custom tag (never matched by
+// page rules on div) and carries an inline `all: initial !important` reset, which beats
+// any page stylesheet rule that still targets it (e.g. `* { transform: … }`).
+
+const HOST_TAG = 'omnivoice-reader-bar';
+const HOST_STYLE = 'all: initial !important;';
+
+// Inline SVG icons: unicode media glyphs render as tofu without a symbol font.
+const svg = (body) =>
+  `<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">${body}</svg>`;
+const ICONS = {
+  prev: svg('<rect x="2" y="3" width="2" height="10"/><path d="M14 3v10L5 8z"/>'),
+  next: svg('<rect x="12" y="3" width="2" height="10"/><path d="M2 3v10l9-5z"/>'),
+  play: svg('<path d="M4 2.5v11L13.5 8z"/>'),
+  pause: svg('<rect x="3.5" y="2.5" width="3" height="11"/><rect x="9.5" y="2.5" width="3" height="11"/>'),
+  close: svg('<path d="M3.5 2.1 8 6.6l4.5-4.5 1.4 1.4L9.4 8l4.5 4.5-1.4 1.4L8 9.4l-4.5 4.5-1.4-1.4L6.6 8 2.1 3.5z"/>'),
+};
 
 const STYLE = `
   :host { all: initial; }
@@ -9,6 +25,7 @@ const STYLE = `
     padding: 8px 12px; border-radius: 10px; background: #1f2328; color: #f6f8fa;
     font: 13px/1.4 system-ui, sans-serif; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   }
+  button svg { display: block; }
   button, select { font: inherit; color: inherit; background: #2d333b; border: 1px solid #444c56;
     border-radius: 6px; padding: 4px 8px; cursor: pointer; }
   button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
@@ -22,13 +39,13 @@ const STYLE = `
 const TEMPLATE = `
   <style>${STYLE}</style>
   <div class="bar" role="toolbar" aria-label="Reader">
-    <button type="button" class="prev" aria-label="Previous" title="Previous sentence (Shift: paragraph)">&#9198;</button>
-    <button type="button" class="toggle" aria-label="Play">&#9654;</button>
-    <button type="button" class="next" aria-label="Next" title="Next sentence (Shift: paragraph)">&#9197;</button>
+    <button type="button" class="prev" aria-label="Previous" title="Previous sentence (Shift: paragraph)">${ICONS.prev}</button>
+    <button type="button" class="toggle" aria-label="Play">${ICONS.play}</button>
+    <button type="button" class="next" aria-label="Next" title="Next sentence (Shift: paragraph)">${ICONS.next}</button>
     <select class="voice" aria-label="Voice"></select>
     <input class="speed" type="range" min="0.5" max="2" step="0.1" value="1" aria-label="Speed">
     <span class="speed-value">1.0&times;</span>
-    <button type="button" class="close" aria-label="Close">&#10005;</button>
+    <button type="button" class="close" aria-label="Close">${ICONS.close}</button>
     <div class="error" role="alert" hidden>
       <span class="message"></span>
       <a class="options" href="#">Open options</a>
@@ -40,8 +57,9 @@ const TEMPLATE = `
 const PLAYING_STATES = new Set(['playing', 'loading']);
 
 export function createBar({ doc = globalThis.document, onAction = () => {} } = {}) {
-  const host = doc.createElement('div');
+  const host = doc.createElement(HOST_TAG);
   host.setAttribute('data-omnivoice-reader', 'bar');
+  host.setAttribute('style', HOST_STYLE);
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = TEMPLATE;
   (doc.body || doc.documentElement).appendChild(host);
@@ -75,7 +93,7 @@ export function createBar({ doc = globalThis.document, onAction = () => {} } = {
   function setState(state, err) {
     const playing = PLAYING_STATES.has(state);
     toggle.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    toggle.textContent = playing ? '⏸' : '▶';
+    toggle.innerHTML = playing ? ICONS.pause : ICONS.play;
     if (state === 'error') {
       message.textContent = String(err ?? 'Something went wrong');
       error.removeAttribute('hidden');

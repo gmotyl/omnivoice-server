@@ -66,3 +66,18 @@ test('highlighting leaves the container DOM unchanged', () => {
   hl.clear();
   assert.equal(root.innerHTML, before);
 });
+
+test('tall paragraph scrolls the window to the sentence', () => {
+  const { document, win, scrolls, makeSentence, hl } = setup();
+  const winScrolls = [];
+  win.scrollBy = (opts) => winScrolls.push(opts);
+  // p1 is taller than the 800px viewport: centring the paragraph could leave the sentence off-screen.
+  document.getElementById('p1').getBoundingClientRect = () => ({ top: -500, bottom: 2500, height: 3000, left: 0, right: 100 });
+  hl.show(makeSentence('p1', { top: 1900, bottom: 1920, left: 0, right: 100 }));
+  assert.equal(scrolls.length, 0);
+  // Sentence centre (1910) moves to the viewport centre (400).
+  assert.deepEqual(winScrolls, [{ top: 1510, behavior: 'smooth' }]);
+  // An on-screen sentence in the same tall paragraph does not scroll.
+  hl.show(makeSentence('p1', { top: 300, bottom: 320, left: 0, right: 100 }));
+  assert.equal(winScrolls.length, 1);
+});
