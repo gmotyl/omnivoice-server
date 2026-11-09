@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Manage the local OmniVoice TTS server (OpenAI-compatible, 127.0.0.1:8890) and its browser
-# relay (relay/, anytts relay protocol with an origin allowlist, 127.0.0.1:8891).
-# Usage: omnivoicectl start|stop|restart|status|log|relay-log
+# relay (relay/, anytts relay protocol with an origin allowlist, 127.0.0.1:8891), plus the
+# Narrate / Read Aloud adapter (narrate/, in front of the relay, 127.0.0.1:8892).
+# Usage: omnivoicectl start|stop|restart|status|log|relay-log|narrate-log
 # Safe to call from the WSL [boot] command: it sets its own PATH/HOME and never blocks.
 set -euo pipefail
 
@@ -10,6 +11,8 @@ PIDFILE="$DIR/run/omnivoice.pid"
 LOG="$DIR/logs/server.log"
 RELAY_PIDFILE="$DIR/run/relay.pid"
 RELAY_LOG="$DIR/logs/relay.log"
+NARRATE_PIDFILE="$DIR/run/narrate.pid"
+NARRATE_LOG="$DIR/logs/narrate.log"
 
 # The caller's PATH, before it is pinned below: the node the caller would run (fnm, nvm) is on
 # it, while the pinned system dirs may hold an older one.
@@ -53,6 +56,9 @@ RELAY_PORT="${RELAY_PORT:-8891}"
 RELAY_HOST="${RELAY_HOST:-127.0.0.1}"
 RELAY_SERVE_HTTPS_PORT="${RELAY_SERVE_HTTPS_PORT:-8443}"
 RELAY_MIN_NODE=22
+NARRATE_PORT="${NARRATE_PORT:-8892}"
+NARRATE_HOST="${NARRATE_HOST:-127.0.0.1}"
+NARRATE_SERVE_HTTPS_PORT="${NARRATE_SERVE_HTTPS_PORT:-8444}"
 
 # ours <pid> <script> <cwd>: the pid is a live process running <script> from <cwd> (the ctl
 # starts the server from $DIR and the relay from $DIR/relay). One argv entry must name exactly
@@ -87,14 +93,14 @@ alive() {
 }
 
 pid_alive() { alive "$PIDFILE" server.py "$DIR"; }
-relay_alive() { alive "$RELAY_PIDFILE" server.mjs "$DIR/relay"; }
 
-# Relays of this DIR that run without (or with a stale) pid file, e.g. after run/ was wiped.
-relay_orphans() {
+# node_orphans <subdir>: node processes of this DIR (server.mjs run from $DIR/<subdir>) that run
+# without (or with a stale) pid file, e.g. after run/ was wiped.
+node_orphans() {
   local p pid
   for p in /proc/[0-9]*; do
     pid="${p#/proc/}"
-    ours "$pid" server.mjs "$DIR/relay" && printf '%s\n' "$pid"
+    ours "$pid" server.mjs "$DIR/$1" && printf '%s\n' "$pid"
   done
   return 0
 }
@@ -200,102 +206,144 @@ relay_node() {
   return 1
 }
 
-# Never fails the ctl: the server is useful without the relay, so a missing node or missing
-# dependencies are reported and start goes on.
-start_relay() {
-  local orphans node
-  if relay_alive; then
-    echo "relay: already running (pid $(cat "$RELAY_PIDFILE"))"
+# --- node processes (relay, narrate) ----------------------------------------------------------
+# Both run `server.mjs` from their own subdir of $DIR; the helpers take <label> <subdir> <pidfile>.
+
+# start_node <label> <subdir> <pidfile> <log> [VAR=value ...]: start $DIR/<subdir>/server.mjs
+# detached with the given env. Never fails the ctl: the server is useful without the relay and
+# the adapter, so a missing node or missing dependencies are reported and start goes on.
+start_node() {
+  local label="$1" sub="$2" pidfile="$3" log="$4" orphans node
+  shift 4
+  if alive "$pidfile" server.mjs "$DIR/$sub"; then
+    echo "$label: already running (pid $(cat "$pidfile"))"
     return 0
   fi
-  orphans="$(relay_orphans)"
+  orphans="$(node_orphans "$sub")"
   if [[ -n "$orphans" ]]; then
-    echo "relay: already running without a pid file (pid $(echo $orphans)), not starting another (run: $0 stop)"
+    echo "$label: already running without a pid file (pid $(echo $orphans)), not starting another (run: $0 stop)"
     return 0
   fi
   if ! node="$(relay_node)"; then
-    echo "relay: not started, no node >= $RELAY_MIN_NODE found (set RELAY_NODE=/path/to/node)" >&2
+    echo "$label: not started, no node >= $RELAY_MIN_NODE found (set RELAY_NODE=/path/to/node)" >&2
     return 0
   fi
-  if [[ ! -d "$DIR/relay/node_modules" ]]; then
-    echo "relay: not started, dependencies missing (run: cd $DIR/relay && npm install)" >&2
+  if [[ ! -d "$DIR/$sub/node_modules" ]]; then
+    echo "$label: not started, dependencies missing (run: cd $DIR/$sub && npm install)" >&2
     return 0
   fi
   mkdir -p "$DIR/run" "$DIR/logs"
-  cd "$DIR/relay"
-  # No wait for the relay (or the server) to answer: the ctl returns at once, well within the
-  # caller's time budget, and the relay's /health reports 503 until the server is up.
-  RELAY_HOST="$RELAY_HOST" RELAY_PORT="$RELAY_PORT" \
-    OMNIVOICE_URL="${OMNIVOICE_URL:-http://127.0.0.1:$PORT}" \
-    setsid nohup "$node" server.mjs >>"$RELAY_LOG" 2>&1 </dev/null &
-  echo $! >"$RELAY_PIDFILE"
-  echo "relay: started (pid $!, $node), log: $RELAY_LOG"
-  if ((${#RELAY_ENV_LOADED[@]})); then
-    echo "relay: env from $RELAY_ENV_FILE: ${RELAY_ENV_LOADED[*]}"
-  fi
+  cd "$DIR/$sub"
+  # No wait for the process (or the server) to answer: the ctl returns at once, well within the
+  # caller's time budget. `env` execs, so $! is the node pid.
+  env "$@" setsid nohup "$node" server.mjs >>"$log" 2>&1 </dev/null &
+  echo $! >"$pidfile"
+  echo "$label: started (pid $!, $node), log: $log"
 }
 
-# Stops the pid file's relay and any relay of this DIR running without one, so none is orphaned.
-stop_relay() {
-  local pids=() pid
-  if relay_alive; then pids+=("$(cat "$RELAY_PIDFILE")"); fi
-  for pid in $(relay_orphans); do
+# stop_node <label> <subdir> <pidfile>: stops the pid file's process and any process of this DIR
+# running the same script without one, so none is orphaned.
+stop_node() {
+  local label="$1" sub="$2" pidfile="$3" pids=() pid
+  if alive "$pidfile" server.mjs "$DIR/$sub"; then pids+=("$(cat "$pidfile")"); fi
+  for pid in $(node_orphans "$sub"); do
     [[ " ${pids[*]} " == *" $pid "* ]] || pids+=("$pid")
   done
-  rm -f "$RELAY_PIDFILE"
+  rm -f "$pidfile"
   if ((${#pids[@]} == 0)); then
-    echo "relay: not running"
+    echo "$label: not running"
     return 0
   fi
-  for pid in "${pids[@]}"; do kill_ours "$pid" server.mjs "$DIR/relay"; done
-  echo "relay: stopped (pid ${pids[*]})"
+  for pid in "${pids[@]}"; do kill_ours "$pid" server.mjs "$DIR/$sub"; done
+  echo "$label: stopped (pid ${pids[*]})"
 }
 
-# The address to probe the relay on: its bind address, or loopback when it binds every interface.
-relay_probe_host() {
-  case "$RELAY_HOST" in
+# probe_host <bind host>: the address to probe on: the bind address, or loopback when it binds
+# every interface.
+probe_host() {
+  case "$1" in
     "" | 0.0.0.0 | :: | "[::]") printf '127.0.0.1' ;;
-    *:*) local h="${RELAY_HOST#[}"; printf '[%s]' "${h%]}" ;;
-    *) printf '%s' "$RELAY_HOST" ;;
+    *:*) local h="${1#[}"; printf '[%s]' "${h%]}" ;;
+    *) printf '%s' "$1" ;;
   esac
 }
 
-relay_status() {
-  local pid orphans url
-  url="http://$(relay_probe_host):$RELAY_PORT/health"
-  if relay_alive; then
-    pid="$(cat "$RELAY_PIDFILE")"
+# node_status <label> <subdir> <pidfile> <host> <port> <hint when /health fails>
+node_status() {
+  local label="$1" sub="$2" pidfile="$3" host="$4" port="$5" hint="$6" pid orphans url
+  url="http://$(probe_host "$host"):$port/health"
+  if alive "$pidfile" server.mjs "$DIR/$sub"; then
+    pid="$(cat "$pidfile")"
   else
-    orphans="$(relay_orphans)"
+    orphans="$(node_orphans "$sub")"
     if [[ -z "$orphans" ]]; then
-      echo "relay: not running"
+      if http_ok "$url"; then
+        echo "$label: answering on $host:$port, but not started by this ctl (no $pidfile)"
+      else
+        echo "$label: not running"
+      fi
       return 0
     fi
     pid="$(echo $orphans) (no pid file; $0 stop stops it)"
   fi
   if http_ok "$url"; then
-    echo "relay: running (pid $pid) on $RELAY_HOST:$RELAY_PORT, /health ok"
+    echo "$label: running (pid $pid) on $host:$port, /health ok"
   else
-    echo "relay: running (pid $pid) on $RELAY_HOST:$RELAY_PORT, /health not ok at $url (server down?)"
+    echo "$label: running (pid $pid) on $host:$port, /health not ok at $url ($hint)"
   fi
 }
 
-# Whether `tailscale serve` maps HTTPS $RELAY_SERVE_HTTPS_PORT to the relay port (set once by
-# hand: `tailscale serve --bg --https=<RELAY_SERVE_HTTPS_PORT> <RELAY_PORT>`). Not 443: on SPOCK
-# HTTPS 443 already serves the Pavilio panel.
+start_relay() {
+  # The relay's /health reports 503 until the server is up.
+  start_node relay relay "$RELAY_PIDFILE" "$RELAY_LOG" \
+    RELAY_HOST="$RELAY_HOST" RELAY_PORT="$RELAY_PORT" \
+    OMNIVOICE_URL="${OMNIVOICE_URL:-http://127.0.0.1:$PORT}"
+  if ((${#RELAY_ENV_LOADED[@]})); then
+    echo "relay: env from $RELAY_ENV_FILE: ${RELAY_ENV_LOADED[*]}"
+  fi
+}
+stop_relay() { stop_node relay relay "$RELAY_PIDFILE"; }
+relay_status() {
+  node_status relay relay "$RELAY_PIDFILE" "$RELAY_HOST" "$RELAY_PORT" "server down?"
+}
+
+# --- narrate ----------------------------------------------------------------------------------
+# The Narrate (Chrome) / Read Aloud (OpenAI-compatible) adapter: it talks to the relay, so it
+# starts after it. Its own /health is always ok while it runs; /config needs the relay.
+
+start_narrate() {
+  # Something else (the old spike, a hand-started adapter) already holds the port.
+  if ! alive "$NARRATE_PIDFILE" server.mjs "$DIR/narrate" 2>/dev/null &&
+    [[ -z "$(node_orphans narrate)" ]] &&
+    http_ok "http://$(probe_host "$NARRATE_HOST"):$NARRATE_PORT/health"; then
+    echo "narrate: already answering on $NARRATE_HOST:$NARRATE_PORT (not started by this ctl), not starting another"
+    return 0
+  fi
+  start_node narrate narrate "$NARRATE_PIDFILE" "$NARRATE_LOG" \
+    HOST="$NARRATE_HOST" PORT="$NARRATE_PORT" \
+    RELAY_URL="http://$(probe_host "$RELAY_HOST"):$RELAY_PORT"
+}
+stop_narrate() { stop_node narrate narrate "$NARRATE_PIDFILE"; }
+narrate_status() {
+  node_status narrate narrate "$NARRATE_PIDFILE" "$NARRATE_HOST" "$NARRATE_PORT" "starting?"
+}
+
+# serve_status <label> <port> <https port>: whether `tailscale serve` maps HTTPS <https port> to
+# 127.0.0.1:<port> (set once by hand: `tailscale serve --bg --https=<https port> <port>`). Never
+# 443: on SPOCK HTTPS 443 already serves the Pavilio panel.
 serve_status() {
-  local json
+  local label="$1" json
   if ! command -v tailscale >/dev/null 2>&1; then
-    echo "tailscale serve: tailscale not installed"
+    echo "tailscale serve ($label): tailscale not installed"
     return 0
   fi
   if ! json="$(tailscale serve status --json 2>/dev/null)"; then
-    echo "tailscale serve: status unavailable (tailscaled not running?)"
+    echo "tailscale serve ($label): status unavailable (tailscaled not running?)"
     return 0
   fi
-  python3 - "$RELAY_PORT" "$RELAY_SERVE_HTTPS_PORT" "$json" <<'PY' || echo "tailscale serve: could not parse status"
+  python3 - "$label" "$2" "$3" "$json" <<'PY' || echo "tailscale serve ($label): could not parse status"
 import json, sys
-port, https, raw = sys.argv[1], sys.argv[2], sys.argv[3]
+label, port, https, raw = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = json.loads(raw or "{}") or {}
 target = f"127.0.0.1:{port}"
 suffix = f":{https}"
@@ -311,10 +359,10 @@ for hostport, web in (cfg.get("Web") or {}).items():
         elif proxy:
             other.append(f"{path} -> {proxy}")
 if found:
-    print(f"tailscale serve: https {https} -> {target} ({found})")
+    print(f"tailscale serve ({label}): https {https} -> {target} ({found})")
 else:
     extra = f"; {https} serves {', '.join(other)}" if other else ""
-    print(f"tailscale serve: https {https} does not map to {target} (run: tailscale serve --bg --https={https} {port}){extra}")
+    print(f"tailscale serve ({label}): https {https} does not map to {target} (run: tailscale serve --bg --https={https} {port}){extra}")
 PY
 }
 
@@ -323,19 +371,24 @@ PY
 start() {
   start_server
   start_relay
+  start_narrate
 }
 
 stop() {
+  stop_narrate
   stop_relay
   stop_server
 }
 
-# Exit code is the server's (0 healthy, 1 loading, 3 not running); relay and serve are reported.
+# Exit code is the server's (0 healthy, 1 loading, 3 not running); relay, narrate and serve are
+# reported.
 status() {
   local rc=0
   server_status || rc=$?
   relay_status
-  serve_status
+  narrate_status
+  serve_status relay "$RELAY_PORT" "$RELAY_SERVE_HTTPS_PORT"
+  serve_status narrate "$NARRATE_PORT" "$NARRATE_SERVE_HTTPS_PORT"
   return "$rc"
 }
 
@@ -346,5 +399,6 @@ case "${1:-status}" in
   status) status ;;
   log) tail -n 50 -f "$LOG" ;;
   relay-log) tail -n 50 -f "$RELAY_LOG" ;;
-  *) echo "usage: $0 start|stop|restart|status|log|relay-log" >&2; exit 2 ;;
+  narrate-log) tail -n 50 -f "$NARRATE_LOG" ;;
+  *) echo "usage: $0 start|stop|restart|status|log|relay-log|narrate-log" >&2; exit 2 ;;
 esac

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OmniVoice Reader options</title>
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 2rem auto; padding: 0 1rem; }
+      h1 { font-size: 1.3rem; }
+      .field { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+      label { font-weight: 600; }
+      input, select, button { font: inherit; padding: 0.35rem 0.5rem; }
+      .hint { color: #57606a; font-size: 0.85rem; margin: 0; }
+      .actions { display: flex; gap: 0.5rem; align-items: center; }
+      #status, #message { min-height: 1.5em; }
+      .error { color: #b3261e; }
+      .ok { color: #1a7f37; }
+    </style>
+    <script type="module" src="options.mjs"></script>
+  </head>
+  <body>
+    <h1>OmniVoice Reader options</h1>
+    <form id="options" novalidate>
+      <div class="field">
+        <label for="baseUrl">Server base URL</label>
+        <input id="baseUrl" name="baseUrl" type="url" required aria-describedby="baseUrl-hint" />
+        <p id="baseUrl-hint" class="hint">
+          OpenAI-compatible endpoint, for example http://localhost:8892/v1. A server other than
+          localhost asks for permission to reach it.
+        </p>
+      </div>
+      <div class="field">
+        <label for="apiKey">API key</label>
+        <input id="apiKey" name="apiKey" type="password" autocomplete="off" aria-describedby="apiKey-hint" />
+        <p id="apiKey-hint" class="hint">Leave empty when the server needs none.</p>
+      </div>
+      <div class="field">
+        <label for="model">Model</label>
+        <input id="model" name="model" type="text" />
+      </div>
+      <div class="field">
+        <label for="voice">Voice</label>
+        <span id="voice-field"><input id="voice" name="voice" type="text" /></span>
+      </div>
+      <div class="field">
+        <label for="speed">Speed</label>
+        <input id="speed" name="speed" type="number" min="0.5" max="2" step="0.1" aria-describedby="speed-hint" />
+        <p id="speed-hint" class="hint">0.5 to 2.0.</p>
+      </div>
+      <div class="field checkbox">
+        <span><input id="autoscroll" name="autoscroll" type="checkbox" aria-describedby="autoscroll-hint" />
+        <label for="autoscroll">Autoscroll</label></span>
+        <p id="autoscroll-hint" class="hint">Scroll the page to the sentence being read. Also on the player bar.</p>
+      </div>
+      <div class="actions">
+        <button type="submit">Save</button>
+        <button type="button" id="test">Test connection</button>
+      </div>
+      <p id="status" role="status" aria-live="polite"></p>
+      <p id="message" role="alert"></p>
+    </form>
+  </body>
+</html>

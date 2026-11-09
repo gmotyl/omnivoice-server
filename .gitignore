@@ -6,4 +6,5 @@ run/
 logs/
 voices-custom/
 relay/node_modules/
+narrate/node_modules/
 relay.env
