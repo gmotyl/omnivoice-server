@@ -155,3 +155,11 @@ test("test connection with denied permission says so and does not call the engin
   assert.equal(chrome.requests.length, 1);
   assert.equal(calls.length, 2);
 });
+
+test("an empty voice list reports that the server lists no voices", async () => {
+  const { document } = await setup({ stored: { voice: "typed" }, voices: { ok: true, voices: [] } });
+  assert.match(status(document), /lists no voices/);
+  const voice = document.getElementById("voice");
+  assert.equal(voice.tagName, "INPUT");
+  assert.equal(voice.value, "typed");
+});

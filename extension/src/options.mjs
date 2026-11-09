@@ -79,7 +79,7 @@ export function initOptions({
     const result = await listVoices(settings);
     if (result?.ok) {
       renderVoice(result.voices, settings.voice);
-      setText(status, result.voices ? "Connection OK" : "Connection OK (the server lists no voices: type one)", "ok");
+      setText(status, result.voices?.length ? "Connection OK" : "Connection OK (the server lists no voices: type one)", "ok");
     } else {
       renderVoice(null, settings.voice);
       setText(status, `Connection failed: ${result?.error ?? "unknown error"}`, "error");
