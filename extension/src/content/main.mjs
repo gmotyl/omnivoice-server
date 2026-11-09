@@ -109,7 +109,8 @@ export function createController({
     return out;
   }
 
-  function pickSentences(msg) {
+  // picked: a pointSource result already computed for msg (Alt+click), reused as is.
+  function pickSentences(msg, picked) {
     const lang = pageLang(doc, win);
     const selection = win.getSelection?.();
     const hasSelection = !!(selection && selection.rangeCount && !selection.isCollapsed);
@@ -119,8 +120,8 @@ export function createController({
     if (msg.source === 'from-here') {
       // A start at a point reads the article, or on app pages only the pane around the point.
       const targets = msg.target ? [msg.target] : fromHereCandidates(msg);
-      const picked = pointSource(doc, targets, lang, { getComputedStyle: paneStyle });
-      return { ...picked, start: Math.max(0, picked.start) };
+      const point = picked ?? pointSource(doc, targets, lang, { getComputedStyle: paneStyle });
+      return { ...point, start: Math.max(0, point.start) };
     }
     return { ...articleSource(doc, lang), start: 0 };
   }
@@ -273,19 +274,20 @@ export function createController({
       if (picked.start < 0) return;
       e.preventDefault();
       e.stopPropagation?.();
-      start({ type: 'start', source: 'from-here', target });
+      start({ type: 'start', source: 'from-here', target }, picked);
     };
     doc.addEventListener('click', s.onClick, true);
     return s;
   }
 
-  async function start(msg) {
+  // picked is used only for this start; a retry of session.startMsg picks again.
+  async function start(msg, picked) {
     const token = ++startToken;
     const settings = await loadSettings();
     if (token !== startToken) return;
     const { list, voice } = await resolveVoice(settings.voice);
     if (token !== startToken) return;
-    const { sentences, start: from, container } = pickSentences(msg);
+    const { sentences, start: from, container } = pickSentences(msg, picked);
 
     // A new start while a session runs reuses its bar and listener.
     const running = Boolean(session);

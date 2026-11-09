@@ -143,6 +143,29 @@ test('sentenceIndexAt maps a node to its paragraph start', () => {
   assert.equal(sentenceIndexAt(sentences, doc.querySelector('#outside p').firstChild), -1);
 });
 
+test('sentenceIndexAt ignores a wrapper or the gap between paragraphs', () => {
+  const doc = dom(`<main id="main">
+    <div id="wrap">
+      <p>First paragraph here. It has two sentences.</p>
+      <p>Second paragraph here. Also two sentences.</p>
+    </div>
+  </main>`);
+  const wrap = doc.getElementById('wrap');
+  class NullReadability {
+    parse() {
+      return null;
+    }
+  }
+  const sentences = articleSentences(doc, 'en', { Readability: NullReadability });
+  assert.ok(sentences.length >= 4);
+  assert.equal(sentenceIndexAt(sentences, wrap), -1);
+  assert.equal(sentenceIndexAt(sentences, doc.getElementById('main')), -1);
+  assert.equal(sentenceIndexAt(sentences, doc.body), -1);
+  // the whitespace text node between the paragraphs
+  const gap = [...wrap.childNodes].find((n) => n.nodeType === 3 && n.previousSibling);
+  assert.equal(sentenceIndexAt(sentences, gap), -1);
+});
+
 test('body fallback reads bare text in containers', () => {
   const doc = dom(`<nav>Menu.</nav><div>Bare text. Second.</div><div><p>Para text.</p></div>`);
   class NullReadability {

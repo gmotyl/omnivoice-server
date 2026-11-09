@@ -218,6 +218,19 @@ test('alt+click seeks to the paragraph start', async () => {
   assert.equal(ofType(chrome.sent, 'seek').length, 1);
 });
 
+test('alt+click on the article container itself does not seek', async () => {
+  const { chrome, document, c } = await started();
+  c.handle({ type: 'state', state: 'playing' });
+  // Empty space between paragraphs targets the wrapper; so do clicks on main and body.
+  for (const el of [document.getElementById('art'), document.querySelector('main'), document.body]) {
+    const ev = altClick(document, el);
+    assert.equal(ev.defaultPrevented, false, el.tagName);
+  }
+  await new Promise((r) => setImmediate(r));
+  assert.equal(ofType(chrome.sent, 'seek').length, 0);
+  assert.equal(ofType(chrome.sent, 'play').length, 1);
+});
+
 test('sentence-start moves the highlight', async () => {
   const { highlighter, c } = await started();
   c.handle({ type: 'sentence-start', index: 2 });

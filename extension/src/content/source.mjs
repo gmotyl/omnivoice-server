@@ -320,15 +320,20 @@ function insideRange(node, r) {
   return compare(node, 0, r.startContainer, r.startOffset) >= 0 && compare(node, 0, r.endContainer, r.endOffset) < 0;
 }
 
+function ownsText(el) {
+  return Array.prototype.some.call(el.childNodes, (n) => n.nodeType === TEXT_NODE && n.data.trim());
+}
+
 export function sentenceIndexAt(sentences, node) {
   if (!node || !sentences.length) return -1;
   for (let i = 0; i < sentences.length; i++) {
     if (insideRange(node, sentences[i].range)) return paragraphStart(sentences, i);
   }
   // e.g. a click on the paragraph element itself or on whitespace between sentences, or on
-  // an element that is not a listed block but holds text (an app's message <div>)
+  // an element that is not a listed block but holds text of its own (an app's message <div>).
+  // A mere wrapper (the gap between paragraphs, article, main, body) resolves to nothing.
   const el = node.nodeType === ELEMENT_NODE ? node : node.parentElement;
-  const block = el && (el.closest(BLOCK_SELECTOR) || el);
+  const block = el && (el.closest(BLOCK_SELECTOR) || (ownsText(el) ? el : null));
   if (!block) return -1;
   const i = sentences.findIndex((s) => block.contains(s.range.startContainer));
   return i < 0 ? -1 : paragraphStart(sentences, i);
