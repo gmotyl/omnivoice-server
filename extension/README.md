@@ -29,11 +29,16 @@ prefetched while the current one plays.
   109+, `chrome.runtime.getContexts` 116+; the CSS Custom Highlight API 105+).
 - Node 22+ and pnpm to build.
 - An OpenAI-compatible TTS server. The default is our adapter on `http://localhost:8892/v1`,
-  started with `./omnivoicectl start` from the repository root (see the top-level
-  [README § Narrate / Read Aloud adapter](../README.md#narrate--read-aloud-adapter)).
+  started with `./omnivoicectl start` from the repository root. To set up the server side (server,
+  relay and adapter) from scratch, follow the top-level
+  [README § Quick start](../README.md#quick-start-read-web-pages-aloud); the adapter itself is
+  described in [README § Narrate / Read Aloud adapter](../README.md#narrate--read-aloud-adapter).
   `https://api.openai.com/v1` with an API key works too.
 
 ## Build and install
+
+The [Quick start](../README.md#quick-start-read-web-pages-aloud) covers these steps too, from a
+fresh clone.
 
 ```bash
 cd extension
