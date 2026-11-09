@@ -249,9 +249,9 @@ export function createPlayer({queue, audio, emit, settings})
 - "engine error stops with error state"
 - "stop clears queue and revokes object urls"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** (wire `offscreen.mjs`: settings from `chrome.storage.sync`, `engine.speak` as `fetchAudio`, messages → player) — Run: `npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -m "feat(extension): offscreen audio player"`
+- [x] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** (wire `offscreen.mjs`: settings from `chrome.storage.sync`, `engine.speak` as `fetchAudio`, messages → player) — Run: `npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -m "feat(extension): offscreen audio player"`
 
 ### Task 8: Highlight and player bar
 
