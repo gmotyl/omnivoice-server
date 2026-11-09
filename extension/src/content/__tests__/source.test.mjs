@@ -133,3 +133,14 @@ test('sentenceIndexAt maps a node to its paragraph start', () => {
   assert.equal(sentenceIndexAt(sentences, doc.getElementById('outside')), -1);
   assert.equal(sentenceIndexAt(sentences, doc.querySelector('#outside p').firstChild), -1);
 });
+
+test('body fallback reads bare text in containers', () => {
+  const doc = dom(`<nav>Menu.</nav><div>Bare text. Second.</div><div><p>Para text.</p></div>`);
+  class NullReadability {
+    parse() {
+      return null;
+    }
+  }
+  const sentences = articleSentences(doc, 'en', { Readability: NullReadability });
+  assert.deepEqual(sentences.map((s) => s.text), ['Bare text.', 'Second.', 'Para text.']);
+});

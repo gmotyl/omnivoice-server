@@ -122,3 +122,82 @@ test('cuts long sentences into pieces at spaces', () => {
   assert.equal(sentence.text, long);
   assert.deepEqual(sentence.pieces, pieces);
 });
+
+test('English text is not guarded by Polish abbreviations', () => {
+  const doc = dom(`<div id="root">
+    <p>That is ok. Fine.</p>
+    <p>The delay is 300 ms. Then it ends.</p>
+    <p>Plan B. Next.</p>
+    <p>Ask Mr. Smith today. He knows, e.g. the answer.</p>
+  </div>`);
+  const sentences = segment(doc.getElementById('root'), { lang: 'en-US', doc });
+  assert.deepEqual(sentences.map((s) => s.text), [
+    'That is ok.', 'Fine.',
+    'The delay is 300 ms.', 'Then it ends.',
+    'Plan B.', 'Next.',
+    'Ask Mr. Smith today.', 'He knows, e.g. the answer.',
+  ]);
+});
+
+test('abbreviation lists follow the language', () => {
+  const doc = dom(`<p id="root">Jest ok. Dobrze.</p>`, 'pl');
+  const root = doc.getElementById('root');
+  // Polish "ok." (około) holds the sentence; in English "ok." ends it
+  assert.deepEqual(segment(root, { lang: 'pl', doc }).map((s) => s.text), ['Jest ok. Dobrze.']);
+  assert.deepEqual(segment(root, { lang: 'en', doc }).map((s) => s.text), ['Jest ok.', 'Dobrze.']);
+  // single-letter initials after a lowercase word or at the start still hold the sentence
+  const doc2 = dom(`<p id="root">Rozmawiałem z J. Kowalskim wczoraj. J. Nowak też był.</p>`, 'pl');
+  assert.deepEqual(segment(doc2.getElementById('root'), { lang: 'pl', doc: doc2 }).map((s) => s.text), [
+    'Rozmawiałem z J. Kowalskim wczoraj.', 'J. Nowak też był.',
+  ]);
+});
+
+test('br separates sentences', () => {
+  const doc = dom(`<p id="root">Line one.<br>Line two.<br/><br>Line three</p>`);
+  const sentences = segment(doc.getElementById('root'), { lang: 'en', doc });
+  assert.deepEqual(sentences.map((s) => s.text), ['Line one.', 'Line two.', 'Line three']);
+  for (const s of sentences) assert.equal(norm(s.range.toString()), s.text);
+  assert.deepEqual(sentences.map((s) => s.paragraph), [0, 0, 0]);
+});
+
+test('bare text in a container block is read once', () => {
+  const doc = dom(`<section id="root">
+    <div>Bare <em>text</em>. Second.</div>
+    <div>Lead in div. <p>Inner paragraph.</p> Tail in div.</div>
+    <article><p>Only the paragraph.</p></article>
+  </section>`);
+  const sentences = segment(doc.getElementById('root'), { lang: 'en', doc });
+  assert.deepEqual(sentences.map((s) => s.text), [
+    'Bare text.', 'Second.', 'Lead in div.', 'Inner paragraph.', 'Tail in div.', 'Only the paragraph.',
+  ]);
+  assert.deepEqual(sentences.map((s) => s.paragraph), [0, 0, 1, 2, 3, 4]);
+  for (const s of sentences) assert.equal(norm(s.range.toString()), s.text);
+
+  // a container root reads its own direct text too
+  const doc2 = dom(`<div id="root">Direct text here.</div>`);
+  assert.deepEqual(segment(doc2.getElementById('root'), { lang: 'en', doc: doc2 }).map((s) => s.text), [
+    'Direct text here.',
+  ]);
+});
+
+test('hard cut keeps pieces within the limit', () => {
+  const word = 'x'.repeat(1000);
+  const pieces = cutPieces(word);
+  assert.deepEqual(pieces.map((p) => p.length), [400, 400, 200]);
+  // hard-cut pieces join without a separator; space cuts drop the space
+  assert.equal(pieces.join(''), word);
+
+  const mixed = `${'y'.repeat(450)} tail words`;
+  const mixedPieces = cutPieces(mixed);
+  for (const piece of mixedPieces) assert.ok(piece.length <= 400);
+  assert.deepEqual(mixedPieces, ['y'.repeat(400), `${'y'.repeat(50)} tail words`]);
+
+  // never split a surrogate pair
+  const emoji = 'a' + '😀'.repeat(300); // 601 UTF-16 units, a pair straddles unit 400
+  const emojiPieces = cutPieces(emoji);
+  for (const piece of emojiPieces) {
+    assert.ok(piece.length <= 400);
+    assert.ok(!/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(piece));
+  }
+  assert.equal(emojiPieces.join(''), emoji);
+});

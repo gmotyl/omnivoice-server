@@ -10,30 +10,45 @@ const BLOCK_TAGS = new Set([
   'BLOCKQUOTE', 'PRE', 'TD', 'DD', 'FIGCAPTION',
 ]);
 export const BLOCK_SELECTOR = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, dd, figcaption';
+// Generic block containers: not paragraphs themselves, but their direct text (outside any
+// listed block) forms its own run, and they always break a run, e.g. `<div>Bare text.</div>`.
+const CONTAINER_TAGS = new Set([
+  'BODY', 'DIV', 'SECTION', 'ARTICLE', 'MAIN', 'HEADER', 'FOOTER', 'NAV', 'ASIDE', 'FIGURE',
+  'ADDRESS', 'DETAILS', 'SUMMARY', 'DT', 'FORM', 'FIELDSET', 'CENTER',
+]);
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
 const SKIP_SELECTOR = 'script, style, noscript, template, [aria-hidden="true"]';
 
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 
-// Lower-case abbreviations (without the final dot) after which a sentence never ends.
-// Ones that often end a sentence ("itd.", "etc.", units like "s.", "min.", "mln.", "r.")
-// are deliberately left out.
-const ABBREVIATIONS = new Set([
-  // Polish
-  'ok', 'np', 'tzn', 'tj', 'tzw', 'm.in', 'wg', 'nr', 'ul', 'dr', 'prof', 'mgr', 'inż',
-  'hab', 'gen', 'płk', 'ks', 'św', 'ds', 'zob', 'por', 'ang', 'łac', 'ww', 'jw', 'tel',
-  // English
-  'mr', 'mrs', 'ms', 'st', 'vs', 'e.g', 'i.e', 'jr', 'sr', 'fig', 'approx', 'cf', 'dept',
-]);
+// Lower-case abbreviations (without the final dot) after which a sentence never ends,
+// keyed by primary language subtag. Ones that often end a sentence ("itd.", "etc.", units
+// like "s.", "ms.", "min.", "mln.", "r.") are deliberately left out.
+const COMMON_ABBREVIATIONS = ['dr', 'prof', 'tel', 'vs'];
+const ABBREVIATIONS = {
+  pl: new Set([...COMMON_ABBREVIATIONS,
+    'ok', 'np', 'tzn', 'tj', 'tzw', 'm.in', 'wg', 'nr', 'ul', 'mgr', 'inż', 'hab', 'gen',
+    'płk', 'ks', 'św', 'ds', 'zob', 'por', 'ang', 'łac', 'ww', 'jw']),
+  en: new Set([...COMMON_ABBREVIATIONS,
+    'mr', 'mrs', 'st', 'e.g', 'i.e', 'jr', 'sr', 'fig', 'approx', 'cf', 'dept']),
+};
+const FALLBACK_ABBREVIATIONS = new Set(COMMON_ABBREVIATIONS);
 
-const TRAILING_ABBREVIATION = /(?:^|[\s(„"'«])((?:\p{L}+\.)*\p{L}+)\.$/u;
+function abbreviationsFor(lang) {
+  const primary = String(lang || '').toLowerCase().split(/[-_]/)[0];
+  return ABBREVIATIONS[primary] || FALLBACK_ABBREVIATIONS;
+}
+
+// Captures the token before the final dot and the word before that token (if any).
+const TRAILING_ABBREVIATION = /(?:^|[\s(„"'«])(?:(\S+)\s+)?((?:\p{L}+\.)*\p{L}+)\.$/u;
 
 function isSkipped(el) {
   return SKIP_TAGS.has(el.tagName) || el.getAttribute('aria-hidden') === 'true';
 }
 
 // Collect text runs: [{block, nodes: [{node, start, end}], text}].
+// `nodes` may leave gaps in `text`: a <br> adds a virtual "\n" owned by no text node.
 function collectRuns(root) {
   const runs = [];
   let current = null;
@@ -46,16 +61,23 @@ function collectRuns(root) {
   const walk = (node, block) => {
     for (const child of node.childNodes) {
       if (child.nodeType === TEXT_NODE) {
-        if (!block) continue; // text outside any block element is not read
         if (!current) current = { block, nodes: [], text: '' };
         const start = current.text.length;
         current.text += child.data;
         current.nodes.push({ node: child, start, end: current.text.length });
       } else if (child.nodeType === ELEMENT_NODE) {
         if (isSkipped(child)) continue;
-        if (BLOCK_TAGS.has(child.tagName)) {
+        if (child.tagName === 'BR') {
+          // a line break separates words (and so sentences); trimming keeps it out of ranges
+          if (current) current.text += '\n';
+        } else if (BLOCK_TAGS.has(child.tagName)) {
           flush();
           walk(child, child);
+          flush();
+        } else if (CONTAINER_TAGS.has(child.tagName)) {
+          // a container breaks the run, so its direct text is a run of its own
+          flush();
+          walk(child, block);
           flush();
         } else {
           walk(child, block);
@@ -64,7 +86,8 @@ function collectRuns(root) {
     }
   };
 
-  walk(root, root.closest(BLOCK_SELECTOR));
+  // text is always read: a root outside any listed block owns its direct text (e.g. <body>)
+  walk(root, root.closest(BLOCK_SELECTOR) || root);
   flush();
   return runs;
 }
@@ -77,22 +100,26 @@ function makeSegmenter(lang) {
   }
 }
 
-function endsWithAbbreviation(segmentText) {
+function endsWithAbbreviation(segmentText, abbreviations) {
   const match = TRAILING_ABBREVIATION.exec(segmentText.trimEnd());
   if (!match) return false;
-  const word = match[1];
-  // single-letter initials ("J. Kowalski") never end a sentence either; English "I." may
-  return ABBREVIATIONS.has(word.toLowerCase()) || (/^\p{Lu}$/u.test(word) && word !== 'I');
+  const [, before, word] = match;
+  if (abbreviations.has(word.toLowerCase())) return true;
+  // A single capital is an initial ("J. Kowalski", "z J. Kowalskim", "J. R. Tolkien") when it
+  // starts the sentence or follows a lowercase word or another initial. After a capitalised
+  // word it ends the sentence ("Plan B. Next."), so "John F. Kennedy" splits there too.
+  if (!/^\p{Lu}$/u.test(word) || word === 'I') return false;
+  return !before || /^\p{Ll}/u.test(before) || /^\p{Lu}\.$/u.test(before);
 }
 
 // Sentence spans [start, end) over `text`, abbreviation-guarded.
-function sentenceSpans(text, segmenter) {
+function sentenceSpans(text, segmenter, abbreviations) {
   const spans = [];
   let open = null;
   for (const { segment, index } of segmenter.segment(text)) {
     if (open) open.end = index + segment.length;
     else open = { start: index, end: index + segment.length };
-    if (!endsWithAbbreviation(text.slice(open.start, open.end))) {
+    if (!endsWithAbbreviation(text.slice(open.start, open.end), abbreviations)) {
       spans.push(open);
       open = null;
     }
@@ -117,6 +144,7 @@ export function segment(root, { lang, doc } = {}) {
   if (!root || root.closest(SKIP_SELECTOR)) return [];
 
   const segmenter = makeSegmenter(lang);
+  const abbreviations = abbreviationsFor(lang);
   const sentences = [];
   let paragraph = 0;
 
@@ -125,7 +153,7 @@ export function segment(root, { lang, doc } = {}) {
     const source = run.block.tagName === 'PRE' ? run.text : run.text.replace(/\s/g, ' ');
     let produced = false;
 
-    for (const span of sentenceSpans(source, segmenter)) {
+    for (const span of sentenceSpans(source, segmenter, abbreviations)) {
       let { start, end } = span;
       while (start < end && /\s/.test(source[start])) start++;
       while (end > start && /\s/.test(source[end - 1])) end--;
@@ -146,6 +174,9 @@ export function segment(root, { lang, doc } = {}) {
   return sentences;
 }
 
+// Cut a sentence into pieces of at most `max` UTF-16 units, at the last space that fits.
+// Join behaviour: a cut at a space drops that space (rejoin with " "); a word longer than
+// `max` is hard-cut with nothing dropped (rejoin with ""), never inside a surrogate pair.
 export function cutPieces(text, max = 400) {
   const pieces = [];
   let rest = text;
@@ -156,8 +187,10 @@ export function cutPieces(text, max = 400) {
       rest = rest.slice(space + 1);
     } else {
       // no space within the limit: hard cut so a request never exceeds `max`
-      pieces.push(rest.slice(0, max));
-      rest = rest.slice(max);
+      let cut = max;
+      if (cut > 1 && /[\uD800-\uDBFF]/.test(rest[cut - 1])) cut--;
+      pieces.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
     }
   }
   if (rest.length) pieces.push(rest);
