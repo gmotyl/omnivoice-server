@@ -12,11 +12,16 @@ function event() {
 }
 
 // Minimal fake of the chrome.* surface the service worker uses; records every outgoing call.
-function fakeChrome({ stored = {} } = {}) {
+// `session` (a plain object) backs a fake chrome.storage.session shared across workers.
+function fakeChrome({ stored = {}, session } = {}) {
   const calls = { tabMessages: [], runtimeMessages: [], injected: [], menus: [], offscreenCreated: 0, optionsOpened: 0 };
   let offscreenOpen = false;
   const chrome = {
     calls,
+    // Simulates Chrome closing an idle AUDIO_PLAYBACK document (~30 s without audio).
+    closeOffscreen: () => {
+      offscreenOpen = false;
+    },
     runtime: {
       onInstalled: event(),
       onMessage: event(),
@@ -60,6 +65,14 @@ function fakeChrome({ stored = {} } = {}) {
     },
     storage: { sync: { get: async (defaults) => ({ ...defaults, ...stored }) } },
   };
+  if (session) {
+    chrome.storage.session = {
+      get: async (key) => (key in session ? { [key]: structuredClone(session[key]) } : {}),
+      set: async (items) => {
+        for (const [k, v] of Object.entries(items)) session[k] = structuredClone(v);
+      },
+    };
+  }
   return chrome;
 }
 
@@ -266,4 +279,158 @@ test("offscreen events go to the owning tab only", async () => {
   deliver(chrome2, { type: "open-options" }, 9);
   await tick();
   assert.equal(chrome2.calls.optionsOpened, 1);
+});
+
+const plays = (chrome) => chrome.calls.runtimeMessages.filter((m) => m.type === "play");
+
+// Starts a session in tab 1, reports progress to sentence `index`, then pauses and lets Chrome
+// close the offscreen document.
+async function pausedAndClosed(chrome, index = 1) {
+  deliver(chrome, { ...PLAY, sentences: [["One."], ["Two."], ["Three."]] }, 1);
+  await tick();
+  deliver(chrome, { type: "state", state: "playing" });
+  deliver(chrome, { type: "sentence-start", index });
+  deliver(chrome, { type: "pause" }, 1);
+  await tick();
+  deliver(chrome, { type: "state", state: "paused" });
+  await tick();
+  chrome.closeOffscreen();
+}
+
+test("resume after the offscreen document closed replays from the current sentence", async () => {
+  const chrome = fakeChrome({ stored: { apiKey: "k" } });
+  createBackground(chrome);
+  await pausedAndClosed(chrome, 1);
+  chrome.calls.runtimeMessages.length = 0;
+
+  deliver(chrome, { type: "resume" }, 1);
+  await tick();
+  assert.equal(chrome.calls.offscreenCreated, 2);
+  assert.equal(plays(chrome).length, 1);
+  const replay = plays(chrome)[0];
+  assert.equal(replay.target, "offscreen");
+  assert.equal(replay.start, 1);
+  assert.equal(replay.tabId, 1);
+  assert.deepEqual(replay.sentences, [["One."], ["Two."], ["Three."]]);
+  assert.equal(replay.settings.apiKey, "k");
+  // The resume itself would go nowhere; only the replay is sent.
+  assert.equal(chrome.calls.runtimeMessages.filter((m) => m.type === "resume").length, 0);
+
+  // With the document alive again, controls are relayed as usual.
+  chrome.calls.runtimeMessages.length = 0;
+  deliver(chrome, { type: "pause" }, 1);
+  deliver(chrome, { type: "resume" }, 1);
+  await tick();
+  assert.deepEqual(
+    chrome.calls.runtimeMessages.map((m) => m.type),
+    ["pause", "resume"],
+  );
+});
+
+test("seek after the offscreen document closed replays from the target", async () => {
+  const chrome = fakeChrome();
+  createBackground(chrome);
+  await pausedAndClosed(chrome, 0);
+  chrome.calls.runtimeMessages.length = 0;
+
+  deliver(chrome, { type: "seek", index: 2 }, 1);
+  await tick();
+  assert.equal(plays(chrome).length, 1);
+  assert.equal(plays(chrome)[0].start, 2);
+  assert.equal(chrome.calls.runtimeMessages.filter((m) => m.type === "seek").length, 0);
+});
+
+test("voice or speed change while closed and paused applies on the next resume", async () => {
+  const chrome = fakeChrome();
+  createBackground(chrome);
+  await pausedAndClosed(chrome, 1);
+  chrome.calls.runtimeMessages.length = 0;
+
+  deliver(chrome, { type: "set-voice", voice: "v2" }, 1);
+  deliver(chrome, { type: "set-speed", speed: 1.5 }, 1);
+  await tick();
+  // Paused: nothing starts playing, the document is not recreated.
+  assert.equal(chrome.calls.runtimeMessages.length, 0);
+  assert.equal(chrome.calls.offscreenCreated, 1);
+
+  deliver(chrome, { type: "resume" }, 1);
+  await tick();
+  assert.equal(plays(chrome).length, 1);
+  assert.equal(plays(chrome)[0].voice, "v2");
+  assert.equal(plays(chrome)[0].speed, 1.5);
+  assert.equal(plays(chrome)[0].start, 1);
+});
+
+test("voice change while closed and playing replays from the current sentence", async () => {
+  const chrome = fakeChrome();
+  createBackground(chrome);
+  deliver(chrome, PLAY, 1);
+  await tick();
+  deliver(chrome, { type: "state", state: "playing" });
+  deliver(chrome, { type: "sentence-start", index: 1 });
+  await tick();
+  chrome.closeOffscreen();
+  chrome.calls.runtimeMessages.length = 0;
+
+  deliver(chrome, { type: "set-voice", voice: "v3" }, 1);
+  await tick();
+  assert.equal(plays(chrome).length, 1);
+  assert.equal(plays(chrome)[0].voice, "v3");
+  assert.equal(plays(chrome)[0].start, 1);
+});
+
+test("a restarted worker still replays after the offscreen document closed", async () => {
+  const session = {};
+  const first = fakeChrome({ session });
+  createBackground(first);
+  await pausedAndClosed(first, 2);
+
+  // Fresh worker instance, same storage.session; the offscreen document is gone.
+  const chrome = fakeChrome({ session });
+  createBackground(chrome);
+  deliver(chrome, { type: "resume" }, 1);
+  await tick();
+  assert.equal(plays(chrome).length, 1);
+  assert.equal(plays(chrome)[0].start, 2);
+  assert.deepEqual(plays(chrome)[0].sentences, [["One."], ["Two."], ["Three."]]);
+});
+
+test("stop forgets the session so a later resume replays nothing", async () => {
+  const chrome = fakeChrome();
+  createBackground(chrome);
+  await pausedAndClosed(chrome, 1);
+  deliver(chrome, { type: "stop" }, 1);
+  await tick();
+  chrome.calls.runtimeMessages.length = 0;
+  deliver(chrome, { type: "resume" }, 1);
+  await tick();
+  assert.equal(plays(chrome).length, 0);
+});
+
+test("play failure reports an error state to the tab", async () => {
+  const chrome = fakeChrome();
+  chrome.offscreen.createDocument = async () => {
+    throw new Error("offscreen refused");
+  };
+  createBackground(chrome);
+  deliver(chrome, PLAY, 6);
+  await tick();
+  assert.deepEqual(chrome.calls.tabMessages, [
+    { tabId: 6, msg: { type: "state", state: "error", error: "offscreen refused" } },
+  ]);
+  assert.equal(plays(chrome).length, 0);
+});
+
+test("a tab that lost ownership while the document loaded does not play", async () => {
+  const chrome = fakeChrome();
+  createBackground(chrome);
+  deliver(chrome, PLAY, 1);
+  // Tab 2 takes over while tab 1's offscreen document is still being created (5 ms).
+  await new Promise((r) => setTimeout(r, 1));
+  deliver(chrome, { ...PLAY, start: 1 }, 2);
+  await tick();
+  assert.deepEqual(
+    plays(chrome).map((m) => m.tabId),
+    [2],
+  );
 });

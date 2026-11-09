@@ -72,3 +72,7 @@ test("every manifest path exists after build", () => {
     assert.ok(existsSync(join(root, p)), `missing: ${p} (run \`npm run build\` first)`);
   }
 });
+
+test("manifest requires Chrome 116 for runtime.getContexts", () => {
+  assert.equal(readManifest().minimum_chrome_version, "116");
+});

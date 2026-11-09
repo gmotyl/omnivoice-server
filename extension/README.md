@@ -107,6 +107,9 @@ To change the shortcut, open `chrome://extensions/shortcuts` (`edge://extensions
   **Read selection**, or press **Retry** once the page has finished rendering.
 - **Nothing happens on click**: browsers block scripting on `chrome://` / `edge://` pages and the
   Chrome Web Store / Edge Add-ons pages; the extension cannot read there.
+- **Resuming after a long pause**: Chrome closes the hidden audio (offscreen) document about 30 s
+  after sound stops. The extension recreates it on resume, seek or a voice/speed change, so a
+  pause longer than that resumes from the start of the current sentence rather than mid-sentence.
 - **Old behaviour after a rebuild**: reload the extension on `chrome://extensions` /
   `edge://extensions`, then reload the page.
 - **Shortcut does nothing**: another extension may own `Alt+Shift+R`; check

@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "OmniVoice Reader",
   "version": "0.1.0",
+  "minimum_chrome_version": "116",
   "description": "Reads the page's article or the selection aloud through an OpenAI-compatible text-to-speech server.",
   "permissions": ["activeTab", "scripting", "offscreen", "contextMenus", "storage"],
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],

@@ -16,37 +16,58 @@ export const MENU_FROM_HERE = "read-from-here";
 const RELAYED = new Set(["seek", "pause", "resume", "stop", "set-speed", "set-voice"]);
 const FROM_OFFSCREEN = new Set(["sentence-start", "state"]);
 const OWNER_KEY = "ownerTabId";
+const PLAYBACK_KEY = "playback";
+// Controls that need a live offscreen document; without one the session is replayed instead.
+const REPLAYABLE = new Set(["resume", "seek", "set-speed", "set-voice"]);
+const ACTIVE_STATES = new Set(["loading", "playing"]);
+
+// A value kept in memory and mirrored to chrome.storage.session (survives a worker restart).
+// get() loads it once (undefined = not loaded yet, null = none); set() updates both.
+function sessionSlot(store, key) {
+  let value;
+  let loading = null;
+  return {
+    peek: () => value,
+    get() {
+      if (value !== undefined) return Promise.resolve(value);
+      loading ??= Promise.resolve()
+        .then(() => store?.get?.(key))
+        .catch(() => undefined)
+        .then((got) => {
+          if (value === undefined) value = got?.[key] ?? null;
+          return value;
+        });
+      return loading;
+    },
+    set(next) {
+      value = next;
+      try {
+        Promise.resolve(store?.set?.({ [key]: next })).catch(() => {});
+      } catch {
+        // storage.session unavailable: in-memory only
+      }
+    },
+  };
+}
 
 // deps: {listVoices, loadSettings} — injectable for tests.
 export function createBackground(chrome, deps = {}) {
   const listVoices = deps.listVoices ?? engineListVoices;
   const loadSettings = deps.loadSettings ?? (() => loadStoredSettings(chrome.storage?.sync));
 
-  // The worker can be suspended mid-session (e.g. while paused); the owner is mirrored to
-  // storage.session so a restarted worker still routes to the right tab.
-  let owner; // undefined = not loaded yet, null = no session
-  let ownerLoading = null;
+  // The worker can be suspended mid-session (e.g. while paused); session state is mirrored to
+  // storage.session so a restarted worker still routes to the right tab and can replay.
   const sessionStore = chrome.storage?.session;
+  const ownerSlot = sessionSlot(sessionStore, OWNER_KEY);
+  // Last play forwarded for the owner ({play, index, state}): Chrome closes an AUDIO_PLAYBACK
+  // offscreen document ~30 s after audio stops, so a later resume/seek must recreate it and
+  // replay from here.
+  const playbackSlot = sessionSlot(sessionStore, PLAYBACK_KEY);
 
-  function getOwner() {
-    if (owner !== undefined) return Promise.resolve(owner);
-    ownerLoading ??= Promise.resolve()
-      .then(() => sessionStore?.get?.(OWNER_KEY))
-      .catch(() => undefined)
-      .then((got) => {
-        if (owner === undefined) owner = got?.[OWNER_KEY] ?? null;
-        return owner;
-      });
-    return ownerLoading;
-  }
-
+  const getOwner = () => ownerSlot.get();
   function setOwner(tabId) {
-    owner = tabId;
-    try {
-      Promise.resolve(sessionStore?.set?.({ [OWNER_KEY]: tabId })).catch(() => {});
-    } catch {
-      // storage.session unavailable: in-memory ownership only
-    }
+    ownerSlot.set(tabId);
+    if (tabId === null) playbackSlot.set(null);
   }
 
   const ignore = () => {};
@@ -98,26 +119,83 @@ export function createBackground(chrome, deps = {}) {
     await toOffscreen({ type: "stop" });
   }
 
+  const reportError = (tabId, err) =>
+    toTab(tabId, { type: "state", state: "error", error: err?.message || String(err) });
+
   async function onPlay(msg, tabId) {
-    const current = await getOwner();
-    if (current !== null && current !== tabId) await toTab(current, { type: "stop" });
-    setOwner(tabId);
-    const [settings] = await Promise.all([loadSettings(), ensureOffscreen()]);
-    // Another tab took over while settings / the offscreen document were loading.
-    if (owner !== tabId) return;
-    const { baseUrl, apiKey, model } = settings;
-    await toOffscreen({ ...msg, tabId, settings: { baseUrl, apiKey, model } });
+    try {
+      const current = await getOwner();
+      if (current !== null && current !== tabId) await toTab(current, { type: "stop" });
+      setOwner(tabId);
+      const [settings] = await Promise.all([loadSettings(), ensureOffscreen()]);
+      // Another tab took over while settings / the offscreen document were loading.
+      if (ownerSlot.peek() !== tabId) return;
+      const { baseUrl, apiKey, model } = settings;
+      const { target, ...play } = { ...msg, tabId, settings: { baseUrl, apiKey, model } };
+      playbackSlot.set({ play, index: play.start ?? 0, state: "loading" });
+      await toOffscreen(play);
+    } catch (err) {
+      await reportError(tabId, err);
+    }
+  }
+
+  // False only when Chrome positively reports no offscreen document (it closed it while idle).
+  async function offscreenAlive() {
+    try {
+      await creating;
+      const contexts = await chrome.runtime.getContexts?.({ contextTypes: ["OFFSCREEN_DOCUMENT"] });
+      return contexts === undefined || contexts.length > 0;
+    } catch {
+      return true;
+    }
+  }
+
+  // Recreates the offscreen document and re-sends the cached play from `start`.
+  async function replay(playback, start, tabId) {
+    try {
+      await ensureOffscreen();
+      if (ownerSlot.peek() !== tabId) return;
+      const latest = playbackSlot.peek() ?? playback;
+      playbackSlot.set({ ...latest, index: start, state: "loading" });
+      await toOffscreen({ ...latest.play, start });
+    } catch (err) {
+      await reportError(tabId, err);
+    }
   }
 
   async function onControl(msg, tabId) {
     if ((await getOwner()) !== tabId) return;
-    if (msg.type === "stop") setOwner(null);
+    if (msg.type === "stop") {
+      setOwner(null);
+      return toOffscreen({ ...msg, tabId });
+    }
+    await playbackSlot.get();
+    // Read after the await (not its result): concurrent controls must not overwrite each other.
+    let playback = playbackSlot.peek();
+    // Keep the cached play current so any later replay uses the latest voice / speed.
+    if (playback && (msg.type === "set-voice" || msg.type === "set-speed")) {
+      const field = msg.type === "set-voice" ? "voice" : "speed";
+      playback = { ...playback, play: { ...playback.play, [field]: msg[field] } };
+      playbackSlot.set(playback);
+    }
+    if (playback && REPLAYABLE.has(msg.type) && !(await offscreenAlive())) {
+      if (msg.type === "seek") return replay(playback, msg.index, tabId);
+      if (msg.type === "resume" || ACTIVE_STATES.has(playback.state)) return replay(playback, playback.index, tabId);
+      return; // paused or idle: the next resume picks up the new voice / speed
+    }
     await toOffscreen({ ...msg, tabId });
   }
 
   async function onOffscreenEvent(msg) {
     const tabId = await getOwner();
-    if (tabId !== null) await toTab(tabId, msg);
+    if (tabId === null) return;
+    await playbackSlot.get();
+    const playback = playbackSlot.peek();
+    if (playback) {
+      if (msg.type === "sentence-start" && Number.isInteger(msg.index)) playbackSlot.set({ ...playback, index: msg.index });
+      if (msg.type === "state") playbackSlot.set({ ...playback, state: msg.state });
+    }
+    await toTab(tabId, msg);
   }
 
   chrome.runtime.onInstalled.addListener(() => {
