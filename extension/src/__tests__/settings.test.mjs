@@ -40,3 +40,18 @@ test("speed is clamped", async () => {
   await saveSettings(storage, { voice: "anna", junk: 1 });
   assert.deepEqual(storage.data, { speed: DEFAULTS.speed, voice: "anna" });
 });
+
+test("empty model and base URL fall back to the defaults", async () => {
+  const storage = fakeStorage();
+  const written = await saveSettings(storage, { model: "  ", baseUrl: "", apiKey: "", voice: "" });
+  assert.equal(written.model, DEFAULTS.model);
+  assert.equal(written.baseUrl, DEFAULTS.baseUrl);
+  // apiKey and voice stay empty: empty is meaningful for them.
+  assert.equal(written.apiKey, "");
+  assert.equal(written.voice, "");
+  // A blank value stored by an older version also loads as the default.
+  const loaded = await loadSettings(fakeStorage({ model: "", baseUrl: " " }));
+  assert.equal(loaded.model, DEFAULTS.model);
+  assert.equal(loaded.baseUrl, DEFAULTS.baseUrl);
+  assert.equal((await saveSettings(storage, { model: " tts-1-hd " })).model, "tts-1-hd");
+});
