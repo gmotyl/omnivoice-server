@@ -501,3 +501,18 @@ test('alt+click outside the current source starts reading that pane', async () =
   assert.equal(t.bars.length, 1, 'the running bar is reused');
   assert.equal(ofType(t.chrome.sent, 'seek').length, 0);
 });
+
+test('voice chosen on the bar is saved as the stored voice', async () => {
+  const { chrome, bars, c } = await started({ stored: { voice: 'alba', speed: 1.2 } });
+  bars[0].action('voice', 'bob');
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(chrome.sent.at(-1), { type: 'set-voice', voice: 'bob' });
+  assert.equal(chrome.stored.voice, 'bob');
+  // Speed on the bar stays session-only.
+  bars[0].action('speed', 1.5);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(chrome.stored.speed, 1.2);
+  // The next session starts with the saved voice.
+  await c.handle({ type: 'start', source: 'auto' });
+  assert.equal(ofType(chrome.sent, 'play').at(-1).voice, 'bob');
+});

@@ -93,13 +93,14 @@ The player bar:
 | ----------------- | ------------------------------------------------------------- |
 | Play / Pause      | pause and resume                                              |
 | Previous / Next   | previous / next sentence; with **Shift**: previous / next paragraph |
-| Voice             | switch voice; the current sentence starts again in the new voice |
+| Voice             | switch voice; the current sentence starts again in the new voice; remembered as the default |
 | Speed slider      | 0.5×–2.0×, applies immediately                                |
 | Autoscroll        | on / off: follow the read sentence by scrolling; off keeps the highlight but never scrolls. Saved as the default |
 | Close             | stop and remove the bar and highlight                         |
 
-Voice and speed changed on the bar apply to the current session only; defaults live in Options.
-The **Autoscroll** toggle is the exception: it is saved and shared with the Options checkbox.
+A voice chosen on the bar is saved as the default (the next session and Options use it), and so is
+the **Autoscroll** toggle (shared with the Options checkbox). Speed changed on the bar applies to the
+current session only; its default lives in Options.
 **Alt+click** a paragraph to jump there (also after the last sentence, until you close the bar).
 Alt+click outside what is being read (another pane of an app page) starts reading that pane there.
 Only one tab reads at a time: starting in another tab stops the first one. Navigating or closing

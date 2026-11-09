@@ -204,6 +204,8 @@ export function createController({
         return send({ type: 'set-speed', speed: payload });
       case 'voice':
         session.voice = payload;
+        // Remembered for the next session and the options page.
+        saveSetting({ voice: payload });
         return send({ type: 'set-voice', voice: payload });
       case 'autoscroll': {
         session.autoscroll = payload !== false;
@@ -211,7 +213,7 @@ export function createController({
         if (session.autoscroll && session.shown != null && sentences[session.shown]) {
           session.highlighter.show(sentences[session.shown], { scroll: true });
         }
-        return saveAutoscroll(session.autoscroll);
+        return saveSetting({ autoscroll: session.autoscroll });
       }
       case 'retry':
         // "Nothing to read" has no sentences to replay: pick them again (the page may have rendered since).
@@ -226,12 +228,12 @@ export function createController({
     }
   }
 
-  // The toggle is a stored preference (shared with the options page), not a session setting.
-  async function saveAutoscroll(value) {
+  // Bar choices that are stored preferences (shared with the options page): voice, autoscroll.
+  async function saveSetting(patch) {
     try {
-      if (chrome.storage?.sync?.set) await saveSettings(chrome.storage.sync, { autoscroll: value });
+      if (chrome.storage?.sync?.set) await saveSettings(chrome.storage.sync, patch);
     } catch {
-      // storage unavailable (e.g. extension reloaded): the toggle still applies to this session
+      // storage unavailable (e.g. extension reloaded): the choice still applies to this session
     }
   }
 
