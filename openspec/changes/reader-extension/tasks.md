@@ -151,9 +151,9 @@ export function sentenceIndexAt(sentences, node) // → index of the first sente
 - "selection of two sentences yields two"
 - "sentenceIndexAt maps a node to its paragraph start"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -m "feat(extension): article and selection sources"`
+- [x] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -m "feat(extension): article and selection sources"`
 
 ### Task 5: Navigation model
 

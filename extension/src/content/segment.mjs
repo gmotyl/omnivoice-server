@@ -9,7 +9,7 @@ const BLOCK_TAGS = new Set([
   'P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
   'BLOCKQUOTE', 'PRE', 'TD', 'DD', 'FIGCAPTION',
 ]);
-const BLOCK_SELECTOR = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, dd, figcaption';
+export const BLOCK_SELECTOR = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, dd, figcaption';
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
 const SKIP_SELECTOR = 'script, style, noscript, template, [aria-hidden="true"]';
 
