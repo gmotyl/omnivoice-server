@@ -392,8 +392,8 @@ export function createBar({doc, onAction}) // → {setState(state, error?), setV
 
 **Verification: non-testable** — Run: `rm -rf node_modules dist && npm install && npm run build && npm test` — Expected: PASS, and every section heading above present (`grep -c '^## ' README.md` ≥ 7)
 
-- [ ] **Step 1: Write both READMEs** — Run: the verification command — Expected: PASS
-- [ ] **Step 2: Commit** — `git commit -m "docs(extension): README and top-level link"`
+- [x] **Step 1: Write both READMEs** — Run: the verification command — Expected: PASS
+- [x] **Step 2: Commit** — `git commit -m "docs(extension): README and top-level link"`
 
 ### Task 13: Manual smoke test in Chrome and Edge
 

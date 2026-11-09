@@ -171,6 +171,12 @@ read from `relay.env`:
 | `NARRATE_PORT`             | `8892`      | the port `tailscale serve` points at                        |
 | `NARRATE_SERVE_HTTPS_PORT` | `8444`      | the tailnet HTTPS port `status` expects to map to the adapter |
 
+## Reader extension
+
+`extension/` is our own Chrome / Edge extension: it reads the page's article or the selection
+aloud through the adapter above (`http://localhost:8892/v1` by default), highlighting each sentence
+in place. Build, install and usage: [extension/README.md](extension/README.md).
+
 ## Tailnet URLs
 
 With both mappings in place, any device on the tailnet uses these (`<host>.<tailnet>.ts.net` is
