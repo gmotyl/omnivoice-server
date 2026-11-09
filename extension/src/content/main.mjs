@@ -252,7 +252,8 @@ export function createController({
     const { sentences, start: from } = pickSentences(msg);
 
     // A new start while a session runs reuses its bar and listener.
-    if (session) session.highlighter.clear();
+    const running = Boolean(session);
+    if (running) session.highlighter.clear();
     else session = createSession(voice, settings.speed);
     session.startMsg = msg;
     session.sentences = sentences;
@@ -261,6 +262,8 @@ export function createController({
     session.bar.setVoices(list, voice);
     session.bar.setSpeed(settings.speed);
     if (!sentences.length) {
+      // The previous session's audio would otherwise keep playing under the error.
+      if (running) send({ type: 'stop' });
       session.state = 'error';
       session.bar.setState('error', 'Nothing to read on this page');
       return;

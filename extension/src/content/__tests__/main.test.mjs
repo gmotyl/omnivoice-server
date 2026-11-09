@@ -382,3 +382,15 @@ test('retry after nothing to read picks sentences again', async () => {
   assert.ok(play, 'play sent');
   assert.ok(play.sentences.length > 0);
 });
+
+test('a new start with nothing to read stops the running audio', async () => {
+  const t = await started();
+  assert.equal(ofType(t.chrome.sent, 'play').length, 1);
+  assert.equal(ofType(t.chrome.sent, 'stop').length, 0);
+  // The page now has nothing readable; a fresh start must not leave the old audio playing.
+  t.document.body.innerHTML = '<main></main>';
+  await t.c.handle({ type: 'start', source: 'auto' });
+  assert.equal(t.c.session.state, 'error');
+  assert.equal(ofType(t.chrome.sent, 'stop').length, 1);
+  assert.equal(ofType(t.chrome.sent, 'play').length, 1);
+});
