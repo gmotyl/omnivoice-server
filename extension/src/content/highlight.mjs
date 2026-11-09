@@ -34,16 +34,36 @@ export function createHighlighter({
     return node && node.nodeType === 1 ? node : node?.parentElement ?? node?.parentNode ?? null;
   }
 
+  // Nearest ancestor that scrolls vertically itself (overflow-y auto/scroll with overflowing
+  // content); null when only the window scrolls.
+  function scrollContainer(el) {
+    for (let node = el?.parentElement; node && node !== doc.body && node !== doc.documentElement; node = node.parentElement) {
+      const overflowY = win.getComputedStyle?.(node)?.overflowY;
+      if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+    }
+    return null;
+  }
+
   // Centre the sentence's block; but when that block is taller than the viewport, centring
-  // it can leave the sentence off-screen, so scroll the window by the sentence's own offset.
+  // it can leave the sentence off-screen, so scroll by the sentence's own offset — the nearest
+  // scroll container when there is one, else the window.
   // (Measured up front: after a smooth scrollIntoView the rect is not updated yet.)
   function scrollToSentence(range, rect) {
     const target = scrollTarget(range);
     const block = target?.getBoundingClientRect?.();
-    if (block && block.height > win.innerHeight && win.scrollBy) {
-      const top = Math.round((rect.top + rect.bottom) / 2 - win.innerHeight / 2);
-      win.scrollBy({ top, behavior: 'smooth' });
-      return;
+    if (block && block.height > win.innerHeight) {
+      const centre = (rect.top + rect.bottom) / 2;
+      const box = scrollContainer(target);
+      if (box?.scrollBy) {
+        const boxRect = box.getBoundingClientRect();
+        const top = Math.round(centre - (boxRect.top + box.clientHeight / 2));
+        box.scrollBy({ top, behavior: 'smooth' });
+        return;
+      }
+      if (win.scrollBy) {
+        win.scrollBy({ top: Math.round(centre - win.innerHeight / 2), behavior: 'smooth' });
+        return;
+      }
     }
     target?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }

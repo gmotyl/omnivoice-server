@@ -81,3 +81,23 @@ test('tall paragraph scrolls the window to the sentence', () => {
   hl.show(makeSentence('p1', { top: 300, bottom: 320, left: 0, right: 100 }));
   assert.equal(winScrolls.length, 1);
 });
+
+test('tall paragraph in a scroll container scrolls the container to the sentence', () => {
+  const { document, win, scrolls, makeSentence, hl } = setup();
+  const winScrolls = [];
+  win.scrollBy = (opts) => winScrolls.push(opts);
+  const root = document.getElementById('root');
+  // #root is a 600px-high scroll box 200px down the page; the page itself does not scroll.
+  win.getComputedStyle = (el) => ({ overflowY: el === root ? 'auto' : 'visible' });
+  Object.defineProperty(root, 'scrollHeight', { value: 5000 });
+  Object.defineProperty(root, 'clientHeight', { value: 600 });
+  root.getBoundingClientRect = () => ({ top: 200, bottom: 800, height: 600, left: 0, right: 100 });
+  const boxScrolls = [];
+  root.scrollBy = (opts) => boxScrolls.push(opts);
+  document.getElementById('p1').getBoundingClientRect = () => ({ top: -500, bottom: 2500, height: 3000, left: 0, right: 100 });
+  hl.show(makeSentence('p1', { top: 1900, bottom: 1920, left: 0, right: 100 }));
+  assert.equal(scrolls.length, 0);
+  assert.equal(winScrolls.length, 0);
+  // Sentence centre (1910) moves to the container's centre (200 + 600 / 2 = 500).
+  assert.deepEqual(boxScrolls, [{ top: 1410, behavior: 'smooth' }]);
+});
