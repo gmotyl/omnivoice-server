@@ -86,9 +86,9 @@ export async function speak(settings, {text, voice}, signal, fetchImpl = fetch) 
 - "listVoices reports failure when both endpoints fail"
 - "trailing slash in baseUrl is normalised"
 
-- [ ] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
-- [ ] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
-- [ ] **Step 3: Commit** — `git commit -m "feat(extension): OpenAI-compatible engine client"`
+- [x] **Step 1: Write the failing tests** — Run: `npm test` — Expected: FAIL
+- [x] **Step 2: Minimal implementation** — Run: `npm test` — Expected: PASS
+- [x] **Step 3: Commit** — `git commit -m "feat(extension): OpenAI-compatible engine client"`
 
 ### Task 3: Segmentation
 
