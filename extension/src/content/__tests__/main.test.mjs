@@ -46,11 +46,23 @@ function fakeChrome(stored = {}) {
   };
 }
 
-function setup({ selection = null, stored = {}, listVoices = null } = {}) {
+function setup({ selection = null, stored = {}, listVoices = null, page = PAGE } = {}) {
   const { document, window } = parseHTML(
-    `<!doctype html><html lang="en"><head><title>Test</title></head><body>${PAGE}</body></html>`,
+    `<!doctype html><html lang="en"><head><title>Test</title></head><body>${page}</body></html>`,
   );
   installTextRange(document);
+  // Count the controller's capture-phase click listeners, so a missing removeEventListener shows.
+  const clickListeners = new Set();
+  const add = document.addEventListener.bind(document);
+  const remove = document.removeEventListener.bind(document);
+  document.addEventListener = (type, fn, opts) => {
+    if (type === 'click') clickListeners.add(fn);
+    return add(type, fn, opts);
+  };
+  document.removeEventListener = (type, fn, opts) => {
+    if (type === 'click') clickListeners.delete(fn);
+    return remove(type, fn, opts);
+  };
   const chrome = fakeChrome(stored);
   const win = {
     document,
@@ -89,7 +101,7 @@ function setup({ selection = null, stored = {}, listVoices = null } = {}) {
     return wrapped;
   };
   const deps = { createBar: makeBar, createHighlighter: () => highlighter, listVoices };
-  return { document, window, win, chrome, highlighter, highlights, bars, deps };
+  return { document, window, win, chrome, highlighter, highlights, bars, deps, clickListeners };
 }
 
 const barHosts = (doc) => doc.querySelectorAll('[data-omnivoice-reader="bar"]').length;
@@ -138,19 +150,45 @@ test('selection start reads only the selection', async () => {
 });
 
 test('from-here starts at the paragraph under the point', async () => {
+  // The context menu reports the clicked link: start at the paragraph holding it.
   const t = setup();
-  t.document.elementFromPoint = (x, y) => (x === 10 && y === 20 ? t.document.getElementById('p4') : null);
+  const a = t.document.createElement('a');
+  a.setAttribute('href', 'https://example.com/more');
+  a.textContent = 'more';
+  t.document.getElementById('p4').appendChild(a);
   const c = install(t.win, t.deps);
-  await c.handle({ type: 'start', source: 'from-here', x: 10, y: 20 });
+  await c.handle({ type: 'start', source: 'from-here', linkUrl: 'https://example.com/more' });
   const [play] = ofType(t.chrome.sent, 'play');
   assert.match(play.sentences[play.start][0], /^Paragraph 4 talks/);
 
-  // nothing under the point → falls back to the first sentence
+  // A plain page right-click has no link: the innermost hovered element decides.
   const t2 = setup();
-  t2.document.elementFromPoint = () => null;
+  const qsa = t2.document.querySelectorAll.bind(t2.document);
+  t2.document.querySelectorAll = (sel) =>
+    sel === ':hover'
+      ? [t2.document.documentElement, t2.document.body, t2.document.getElementById('art'), t2.document.getElementById('p3')]
+      : qsa(sel);
   const c2 = install(t2.win, t2.deps);
-  await c2.handle({ type: 'start', source: 'from-here', x: 1, y: 1 });
-  assert.equal(ofType(t2.chrome.sent, 'play')[0].start, 0);
+  await c2.handle({ type: 'start', source: 'from-here' });
+  const [play2] = ofType(t2.chrome.sent, 'play');
+  assert.match(play2.sentences[play2.start][0], /^Paragraph 3 talks/);
+
+  // nothing resolvable → falls back to the first sentence
+  const t3 = setup();
+  const c3 = install(t3.win, t3.deps);
+  await c3.handle({ type: 'start', source: 'from-here', srcUrl: 'https://example.com/missing.png' });
+  assert.equal(ofType(t3.chrome.sent, 'play')[0].start, 0);
+});
+
+test('from-here resolves a clicked image by srcUrl', async () => {
+  const t = setup();
+  const img = t.document.createElement('img');
+  img.setAttribute('src', 'https://example.com/pic.png');
+  t.document.getElementById('p5').appendChild(img);
+  const c = install(t.win, t.deps);
+  await c.handle({ type: 'start', source: 'from-here', srcUrl: 'https://example.com/pic.png' });
+  const [play] = ofType(t.chrome.sent, 'play');
+  assert.match(play.sentences[play.start][0], /^Paragraph 5 talks/);
 });
 
 test('alt+click seeks to the paragraph start', async () => {
@@ -232,10 +270,12 @@ test('toggle pauses and resumes', async () => {
 
 test('stop tears down bar, highlight and listeners', async () => {
   for (const how of ['message', 'close']) {
-    const { chrome, document, highlighter, bars, c } = await started();
+    const { chrome, document, highlighter, bars, c, clickListeners } = await started();
     c.handle({ type: 'sentence-start', index: 1 });
+    assert.equal(clickListeners.size, 1, how);
     if (how === 'message') c.handle({ type: 'stop' });
     else bars[0].action('close');
+    assert.equal(clickListeners.size, 0, `${how}: click listener removed`);
     assert.equal(highlighter.shown, null, how);
     assert.equal(barHosts(document), 0, how);
     assert.equal(c.session, null, how);
@@ -271,4 +311,74 @@ test('empty stored voice uses the first listed voice, asked once', async () => {
   await c.handle({ type: 'start', source: 'auto' });
   assert.equal(calls, 1);
   assert.ok(ofType(t.chrome.sent, 'play').every((p) => p.voice === 'first'));
+});
+
+test('natural end keeps alt+click, which starts reading again there', async () => {
+  const { chrome, document, c, clickListeners } = await started();
+  c.handle({ type: 'state', state: 'playing' });
+  c.handle({ type: 'state', state: 'idle' });
+  assert.equal(clickListeners.size, 1, 'listener kept after the last sentence ended');
+  const before = ofType(chrome.sent, 'play').length;
+  const ev = altClick(document, document.getElementById('p6'));
+  assert.equal(ev.defaultPrevented, true);
+  const plays = ofType(chrome.sent, 'play');
+  assert.equal(plays.length, before + 1);
+  assert.match(plays.at(-1).sentences[plays.at(-1).start][0], /^Paragraph 6 talks/);
+});
+
+test('stop during start does not start a session', async () => {
+  let release;
+  const listVoices = () => new Promise((r) => (release = r));
+  const t = setup({ listVoices });
+  const c = install(t.win, t.deps);
+  const starting = c.handle({ type: 'start', source: 'auto' });
+  await new Promise((r) => setImmediate(r));
+  c.handle({ type: 'stop' });
+  release({ ok: true, voices: ['a'] });
+  await starting;
+  assert.ok(c.session === null, 'no session'); // not assert.equal: inspecting a session walks the DOM
+  assert.equal(ofType(t.chrome.sent, 'play').length, 0);
+  assert.equal(barHosts(t.document), 0);
+});
+
+test('voices are asked once per session', async () => {
+  let calls = 0;
+  const listVoices = async () => {
+    calls++;
+    return { ok: true, voices: ['first'] };
+  };
+  const { c, bars } = await started({ listVoices });
+  await c.handle({ type: 'start', source: 'auto' });
+  assert.equal(calls, 1);
+  bars[0].action('close');
+  await c.handle({ type: 'start', source: 'auto' });
+  assert.equal(calls, 2, 'a new session asks again');
+});
+
+test('default listVoices asks the service worker', async () => {
+  const t = setup();
+  const send = t.chrome.runtime.sendMessage;
+  t.chrome.runtime.sendMessage = async (msg) => {
+    await send(msg);
+    return msg.type === 'list-voices' ? { ok: true, voices: ['sw-voice'] } : undefined;
+  };
+  const { listVoices, ...deps } = t.deps;
+  const c = createController({ ...deps, doc: t.document, win: t.win, chrome: t.chrome });
+  await c.handle({ type: 'start', source: 'auto' });
+  assert.equal(ofType(t.chrome.sent, 'list-voices').length, 1);
+  assert.equal(ofType(t.chrome.sent, 'play')[0].voice, 'sw-voice');
+});
+
+test('retry after nothing to read picks sentences again', async () => {
+  const t = setup({ page: '<main id="m"></main>' });
+  const c = install(t.win, t.deps);
+  await c.handle({ type: 'start', source: 'auto' });
+  assert.equal(c.session.state, 'error');
+  assert.equal(ofType(t.chrome.sent, 'play').length, 0);
+  // The page finished rendering its article meanwhile.
+  t.document.getElementById('m').innerHTML = `<article>${[1, 2, 3, 4].map(longParagraph).join('')}</article>`;
+  await t.bars[0].action('retry');
+  const [play] = ofType(t.chrome.sent, 'play');
+  assert.ok(play, 'play sent');
+  assert.ok(play.sentences.length > 0);
 });

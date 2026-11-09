@@ -9,7 +9,7 @@ import { createHighlighter } from './highlight.mjs';
 import { createBar } from './bar.mjs';
 
 // One controller per page, shared by every injection of the bundle.
-export const SESSION_KEY = Symbol.for('omnivoice-reader.session');
+export const CONTROLLER_KEY = Symbol.for('omnivoice-reader.controller');
 
 const SETTINGS_DEFAULTS = { voice: '', speed: 1.0 };
 const PLAYING = new Set(['playing', 'loading']);
@@ -18,24 +18,31 @@ function pageLang(doc, win) {
   return doc.documentElement.getAttribute('lang') || win.navigator?.language || undefined;
 }
 
+// Tags whose `src` the context menu reports as OnClickData.srcUrl.
+const SRC_SELECTOR = 'img, video, audio, source, iframe, embed';
+
 // deps: {doc, win, chrome, createBar, createHighlighter, listVoices}
-// listVoices (optional): async () => {ok, voices: string[] | null}, asked once per page to pick
-// the first listed voice when none is stored.
-// TODO(Task 10/11): wire a default listVoices. It must not fetch from here: a content-script
-// fetch runs with the page's origin (CORS, Local Network Access), and design.md keeps all
-// fetching in the extension, so it needs a service-worker/offscreen relay message that is not
-// in the message contract yet. Until then an empty stored voice is sent as "".
+// listVoices: async () => {ok, voices: string[] | null}, asked once per session to pick the
+// first listed voice when none is stored. The default asks the service worker (`list-voices`):
+// a content-script fetch would run with the page's origin (CORS, Local Network Access).
+// Pass null to never ask.
 export function createController({
   doc = globalThis.document,
   win = globalThis.window,
   chrome = globalThis.chrome,
   createBar: makeBar = createBar,
   createHighlighter: makeHighlighter = createHighlighter,
-  listVoices = null,
+  listVoices,
 } = {}) {
   let session = null;
-  let voiceList = null; // null = not known or the engine cannot list voices
-  let voiceListAsked = false;
+  // Voice listing of the current session (shared by restarts inside it); reset on teardown.
+  let voicesAsked = null;
+  // Bumped by every teardown, so a stop that lands while start() awaits cancels that start.
+  let startToken = 0;
+
+  if (listVoices === undefined) {
+    listVoices = () => Promise.resolve(chrome.runtime.sendMessage({ type: 'list-voices' }));
+  }
 
   const send = (msg) => {
     try {
@@ -54,17 +61,49 @@ export function createController({
     }
   }
 
-  async function resolveVoice(stored) {
-    if (!voiceListAsked && listVoices) {
-      voiceListAsked = true;
-      try {
-        const res = await listVoices();
-        voiceList = res && res.ok && Array.isArray(res.voices) ? res.voices : null;
-      } catch {
-        voiceList = null;
-      }
+  async function askVoices() {
+    if (!listVoices) return null;
+    try {
+      const res = await listVoices();
+      return res && res.ok && Array.isArray(res.voices) ? res.voices : null;
+    } catch {
+      return null; // null = not known or the engine cannot list voices
     }
-    return { list: voiceList, voice: stored || (voiceList && voiceList[0]) || '' };
+  }
+
+  async function resolveVoice(stored) {
+    voicesAsked ??= askVoices();
+    const list = await voicesAsked;
+    return { list, voice: stored || (list && list[0]) || '' };
+  }
+
+  // Context-menu "Read from here": OnClickData has no coordinates, only the clicked
+  // link/image URL. Without one, the innermost hovered element is where the menu opened.
+  function fromHereCandidates(msg) {
+    const out = [];
+    const matches = (el, attr, want) => {
+      const raw = el.getAttribute(attr);
+      if (!raw) return false;
+      if (raw === want) return true;
+      try {
+        return new URL(raw, doc.baseURI || win.location?.href).href === want;
+      } catch {
+        return false;
+      }
+    };
+    if (msg.linkUrl) {
+      for (const a of doc.querySelectorAll('a[href]')) if (matches(a, 'href', msg.linkUrl)) out.push(a);
+    }
+    if (msg.srcUrl) {
+      for (const el of doc.querySelectorAll(SRC_SELECTOR)) if (matches(el, 'src', msg.srcUrl)) out.push(el);
+    }
+    try {
+      const hovered = doc.querySelectorAll(':hover');
+      if (hovered.length) out.push(hovered[hovered.length - 1]);
+    } catch {
+      // :hover unsupported by this DOM
+    }
+    return out;
   }
 
   function pickSentences(msg) {
@@ -76,10 +115,14 @@ export function createController({
     }
     const sentences = articleSentences(doc, lang);
     let start = 0;
-    if (msg.source === 'from-here' && Number.isFinite(msg.x) && Number.isFinite(msg.y)) {
-      const el = doc.elementFromPoint?.(msg.x, msg.y);
-      const i = el ? sentenceIndexAt(sentences, el) : -1;
-      if (i >= 0) start = i;
+    if (msg.source === 'from-here') {
+      for (const el of fromHereCandidates(msg)) {
+        const i = sentenceIndexAt(sentences, el);
+        if (i >= 0) {
+          start = i;
+          break;
+        }
+      }
     }
     return { sentences, start };
   }
@@ -107,6 +150,8 @@ export function createController({
   }
 
   function teardown() {
+    startToken++;
+    voicesAsked = null;
     if (!session) return;
     const s = session;
     session = null;
@@ -161,10 +206,10 @@ export function createController({
         session.voice = payload;
         return send({ type: 'set-voice', voice: payload });
       case 'retry':
-        return play(current);
+        // "Nothing to read" has no sentences to replay: pick them again (the page may have rendered since).
+        return sentences.length ? play(current) : start(session.startMsg);
       case 'options':
-        // TODO(Task 10): content scripts cannot call chrome.runtime.openOptionsPage; the
-        // service worker has to open the options page on this message.
+        // Content scripts cannot call chrome.runtime.openOptionsPage; the service worker does.
         return send({ type: 'open-options' });
       case 'close':
         return stop();
@@ -199,13 +244,17 @@ export function createController({
   }
 
   async function start(msg) {
+    const token = startToken;
     const settings = await loadSettings();
+    if (token !== startToken) return;
     const { list, voice } = await resolveVoice(settings.voice);
+    if (token !== startToken) return;
     const { sentences, start: from } = pickSentences(msg);
 
     // A new start while a session runs reuses its bar and listener.
     if (session) session.highlighter.clear();
     else session = createSession(voice, settings.speed);
+    session.startMsg = msg;
     session.sentences = sentences;
     session.voice = voice;
     session.speed = settings.speed;
@@ -263,9 +312,9 @@ export function createController({
 
 // Install once per page: a second injection of the bundle reuses the existing controller.
 export function install(win = globalThis, deps = {}) {
-  if (win[SESSION_KEY]) return win[SESSION_KEY];
+  if (win[CONTROLLER_KEY]) return win[CONTROLLER_KEY];
   const controller = createController({ win, doc: win.document, chrome: win.chrome, ...deps });
-  win[SESSION_KEY] = controller;
+  win[CONTROLLER_KEY] = controller;
   return controller;
 }
 
