@@ -28,6 +28,8 @@ paragraph, the current sentence highlighted on the page — speaking through any
   the context menu.
 - Store-ready shape from day one: `activeTab` + `scripting` instead of `<all_urls>`, localhost-only
   fixed host permissions, other servers requested at runtime, no remote code.
+- `extension/README.md`: requirements, build, Load unpacked in Chrome and Edge, options, usage,
+  troubleshooting and development; the top-level README links to it.
 - No server change: the adapter's existing `/v1` surface is enough.
 
 ## Distribution

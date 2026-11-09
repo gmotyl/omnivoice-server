@@ -46,6 +46,8 @@ extension/
   src/engine.mjs       OpenAI client: listVoices(), speak(text, voice, signal)
   test/                node --test with linkedom
   build.mjs            esbuild bundle of content/main.mjs → dist/
+  README.md            what it is, requirements, build, Load unpacked in Chrome and Edge,
+                       options, using it, troubleshooting, development (test, build, reload)
 ```
 
 ## Data flow
@@ -116,6 +118,28 @@ stateDiagram-v2
 | `voice` | first voice the engine lists |
 | `speed` | `1.0` (range 0.5–2.0, step 0.1) |
 | `model` | `tts-1` (sent as-is; our adapter ignores it) |
+
+## Documentation
+
+`extension/README.md` is the entry point for anyone installing or changing the extension:
+
+- **What it is**: one paragraph and the feature list (article, selection, Alt+click, sentence and
+  paragraph navigation, highlight, voice, speed).
+- **Requirements**: Chrome or Edge with MV3 and the CSS Custom Highlight API (Chrome/Edge 105+),
+  Node 22+ to build, and an OpenAI-compatible TTS server — by default our adapter
+  (`./omnivoicectl start`, `http://localhost:8892/v1`, see the top-level README § Narrate / Read
+  Aloud adapter); `https://api.openai.com/v1` with a key works too.
+- **Build and install**: `npm install`, `npm run build`, then Load unpacked from `extension/` via
+  `chrome://extensions` / `edge://extensions` with Developer mode on.
+- **Options**: each setting, its default, and the host-permission prompt for a non-local server.
+- **Using it**: triggers (icon, `Alt+Shift+R`, context menu), player bar controls, Alt+click,
+  Shift+previous/next, and how to change the shortcut (`chrome://extensions/shortcuts`).
+- **Troubleshooting**: engine unreachable (`./omnivoicectl status`), empty voice list, page with no
+  article, reload the extension after a rebuild.
+- **Development**: `npm test`, `npm run build`, file map, where the spec lives
+  (`openspec/specs/reader-extension/spec.md` after archive).
+
+The top-level `README.md` gets a short "Reader extension" section linking to it.
 
 ## Testing
 
