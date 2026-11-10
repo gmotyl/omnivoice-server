@@ -37,12 +37,12 @@ uv sync --frozen                     # Python 3.12, torch 2.8.0+cu128, omnivoice
 The extension talks to the narrate adapter, and the adapter sits in front of the relay, which
 calls the server: you need both `relay/` and `narrate/` installed, not only the server.
 
-`omnivoicectl` keeps the model in `$HF_HOME` and defaults it to `/root/.cache/huggingface`. If
-you are not root, or want another cache, export it before every `omnivoicectl` call (it is not
-read from `relay.env`):
+`omnivoicectl` keeps the model in `$HF_HOME` and defaults it to `$HOME/.cache/huggingface` (with
+no `HOME`, as from a boot command, the invoking user's home from passwd). To use another cache,
+export `HF_HOME` or set it in `relay.env`:
 
 ```bash
-export HF_HOME="$HOME/.cache/huggingface"
+echo 'HF_HOME=/data/huggingface' >> relay.env
 ```
 
 ### 3. Start the server
@@ -102,8 +102,9 @@ Usage, options and troubleshooting: [extension/README.md](extension/README.md).
 .venv/bin/python -m pytest        # API tests, model mocked
 ```
 
-`omnivoicectl` uses `HF_HOME` (default `/root/.cache/huggingface`; set it to your own Hugging Face
-cache) and `HF_HUB_OFFLINE=1` unless you set them; the pid goes in `run/`, the log in
+`omnivoicectl` uses `HF_HOME` (default `$HOME/.cache/huggingface`; `HOME` falls back to the
+invoking user's home from passwd) and `HF_HUB_OFFLINE=1` unless you set them, in the environment or
+in `relay.env`; the pid goes in `run/`, the log in
 `logs/server.log`.
 
 Env: `OMNIVOICE_HOST` (127.0.0.1), `OMNIVOICE_PORT` (8890), `OMNIVOICE_STEPS` (16),
@@ -131,7 +132,7 @@ command = /bin/sh -c "/path/to/omnivoice-server/omnivoicectl start >/dev/null 2>
 ```
 
 Such a hook usually has no version manager (fnm, nvm) on its `PATH`: set `RELAY_NODE` in
-`relay.env` to an absolute node >= 22 path, and `HF_HOME` in the command if you use a non-default
+`relay.env` to an absolute node >= 22 path, and `HF_HOME` there too if you use a non-default
 cache.
 
 ## Text normalisation
@@ -180,7 +181,7 @@ that runs without a pid file, and `status` reports one. Env:
 | `RELAY_HOST`            | `127.0.0.1`              | keep it on loopback                                           |
 | `RELAY_PORT`            | `8891`                   |                                                               |
 | `OMNIVOICE_URL`         | `http://127.0.0.1:8890`  | the server (the ctl derives it from `OMNIVOICE_PORT`)         |
-| `RELAY_ALLOWED_ORIGINS` | `https://motyl.dev`      | comma list of browser origins, e.g. `https://example.com,http://localhost:3000`; set your own (the default is the author's site) |
+| `RELAY_ALLOWED_ORIGINS` | none                     | comma list of browser origins, e.g. `https://example.com,http://localhost:3000`; unset, no browser page may call the relay (the log says so; `/health` still answers) |
 | `RELAY_NODE`            | `node` on the caller's `PATH`, else fnm's default alias | absolute path to a node >= 22; set it when the ctl runs with a minimal `PATH` (a boot hook) |
 | `RELAY_SERVE_HTTPS_PORT` | `8443`                  | only for `status`: the tailnet HTTPS port it expects `tailscale serve` to map to the relay |
 

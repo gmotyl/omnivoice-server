@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { createRelayApp, toVoiceInfo } from "../app.mjs";
+import { createRelayApp, parseAllowedOrigins, toVoiceInfo } from "../app.mjs";
 
-const ORIGIN = "https://motyl.dev";
+const ORIGIN = "https://site.example";
 const MP3 = Buffer.from([0x49, 0x44, 0x33, 0x04, 0x00]); // "ID3" header bytes
 
 const record = (id, extra = {}) => ({
@@ -196,6 +196,30 @@ test("allowed origin gets CORS headers and a 204 preflight", async (t) => {
   // The second listed origin is allowed too.
   const local = await app(get("/health", "http://localhost:3000"));
   assert.equal(local.headers.get("access-control-allow-origin"), "http://localhost:3000");
+});
+
+test("parseAllowedOrigins has no default: unset or blank allows no origin", () => {
+  assert.deepEqual(parseAllowedOrigins(undefined), []);
+  assert.deepEqual(parseAllowedOrigins(""), []);
+  assert.deepEqual(parseAllowedOrigins(" , "), []);
+  assert.deepEqual(parseAllowedOrigins(" https://a.example , http://localhost:3000,"), ["https://a.example", "http://localhost:3000"]);
+});
+
+test("with the default (no origins) every browser POST is a 403 and /health still answers", async (t) => {
+  const ov = await stubOmniVoice();
+  t.after(ov.close);
+  const app = createRelayApp({ omnivoiceUrl: ov.url, allowedOrigins: parseAllowedOrigins(undefined) });
+
+  for (const origin of [ORIGIN, "http://localhost:3000"]) {
+    const res = await app(post({ engine: "openai", text: "Hi", voice: "pl-female" }, origin));
+    assert.equal(res.status, 403);
+    assert.equal(res.headers.get("access-control-allow-origin"), null);
+  }
+  assert.equal(ov.state.speech.length, 0);
+
+  const health = await app(get("/health", null));
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), { ok: true });
 });
 
 test("other origin gets no CORS headers and 403 on POST", async (t) => {
