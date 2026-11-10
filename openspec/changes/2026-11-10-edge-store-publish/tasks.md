@@ -53,8 +53,8 @@
 
 **Verification: non-testable** — Run: `gh repo view gmotyl/lektor-tts --json visibility,licenseInfo` — Expected: `PUBLIC`, MIT.
 
-- [ ] **Step 1: Ask, create, push, update repos.json, commit workspace** — `omnivoice-server: add lektor-tts repo`
-- [ ] **Step 2: In lektor-tts** — `git switch -c feat/store-release` for Tasks 4–14
+- [x] **Step 1: Ask, create, push, update repos.json, commit workspace** — `omnivoice-server: add lektor-tts repo`
+- [x] **Step 2: In lektor-tts** — `git switch -c feat/store-release` for Tasks 4–14
 
 ### Task 15: omnivoice-server becomes server-only
 
