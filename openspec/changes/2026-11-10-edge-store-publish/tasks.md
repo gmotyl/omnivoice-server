@@ -71,7 +71,7 @@
 
 **Verification: non-testable** — Run: `uv run pytest -q && (cd relay && node --test) && ./omnivoicectl status` — Expected: all green.
 
-- [ ] **Step 1: Remove, rewrite README, verify, commit** — `git commit -am "chore: move the reader extension to gmotyl/lektor-tts"`
+- [x] **Step 1: Remove, rewrite README, verify, commit** — `git commit -am "chore: move the reader extension to gmotyl/lektor-tts"`
 - [ ] **Step 2: Push `feat/edge-store-publish`, open PR to `master`**
 
 ### Task 16: Manual smoke and submission (Greg)

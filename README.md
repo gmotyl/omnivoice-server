@@ -9,8 +9,8 @@ It comes with everything needed to read web pages aloud in your own voice catalo
 - **the relay** (`relay/`, port 8891): a small Node process speaking the anytts protocol;
 - **the Narrate / Read Aloud adapter** (`narrate/`, port 8892): an OpenAI-compatible
   `/v1/audio/speech` endpoint in front of the relay;
-- **the reader extension** (`extension/`): a Chrome / Edge extension that reads the open page
-  aloud through the adapter, highlighting each sentence.
+- **[Lektor TTS](https://github.com/gmotyl/lektor-tts)** (separate repo): the Edge / Chrome
+  extension that reads the open page aloud through the adapter, highlighting each sentence.
 
 `./omnivoicectl start` starts the server, the relay and the adapter together, all on loopback.
 Reaching them from other devices is [optional](#using-it-from-other-devices-optional-tailscale).
@@ -21,8 +21,8 @@ Reaching them from other devices is [optional](#using-it-from-other-devices-opti
 
 - An NVIDIA GPU with CUDA.
 - [uv](https://docs.astral.sh/uv/) and `ffmpeg` on `PATH`.
-- Node 22+ with npm (relay and adapter), and [pnpm](https://pnpm.io/) to build the extension.
-- Chrome or Edge 116+.
+- Node 22+ with npm (relay and adapter).
+- Edge or Chrome 116+ for Lektor TTS (step 4).
 
 ### 2. Get the code and install the dependencies
 
@@ -34,7 +34,7 @@ uv sync --frozen                     # Python 3.12, torch 2.8.0+cu128, omnivoice
 (cd narrate && npm install)
 ```
 
-The extension talks to the narrate adapter, and the adapter sits in front of the relay, which
+Lektor TTS talks to the narrate adapter, and the adapter sits in front of the relay, which
 calls the server: you need both `relay/` and `narrate/` installed, not only the server.
 
 `omnivoicectl` keeps the model in `$HF_HOME` and defaults it to `/root/.cache/huggingface`. If
@@ -55,35 +55,26 @@ HF_HUB_OFFLINE=0 ./omnivoicectl start
 ```
 
 `start` returns at once; loading the model takes a while (longer on the first start). After that,
-plain `./omnivoicectl start` works offline. Check the adapter, which is what the extension uses:
+plain `./omnivoicectl start` works offline. Check the adapter, which is what Lektor TTS uses:
 
 ```bash
 curl -s http://127.0.0.1:8892/health            # {"ok":true}
 curl -s http://127.0.0.1:8892/v1/audio/voices   # {"voices":["auto", ...]}
 ```
 
-### 4. Build and load the extension
+### 4. Install Lektor TTS
 
-```bash
-cd extension
-pnpm install
-pnpm build
-```
+[Lektor TTS](https://github.com/gmotyl/lektor-tts) is the browser extension that reads the open
+page aloud through the adapter, highlighting each sentence. It now lives in its own repo; the
+Edge Add-ons link is added here once the store listing is published. Until then, install it as
+described in the lektor-tts README.
 
-1. Open `chrome://extensions` (Chrome) or `edge://extensions` (Edge) and turn on
-   **Developer mode**.
-2. **Load unpacked** and pick the `extension/` folder (not `dist/`).
-3. Open the extension's **Options** (right-click the toolbar icon → Options) and press
-   **Test connection**: it should say "Connection OK" with the default
-   `http://localhost:8892/v1`. Pick a voice and **Save**.
-4. Open an article and click the toolbar icon (or press `Alt+Shift+R`). The page is read aloud,
-   with the current sentence highlighted.
+On Lektor's setup screen (it opens on install), pick the **omnivoice-server** preset: its address
+`http://localhost:8892/v1` is the adapter started above. Press **Save and test**, then open an
+article and click the toolbar icon (or press `Alt+Shift+R`).
 
-**WSL:** if the server runs in WSL and the browser on Windows, load the folder through its
-`\\wsl$\<distro>\…\omnivoice-server\extension` path. WSL forwards `localhost` to Windows, so the
-default `http://localhost:8892/v1` reaches the adapter.
-
-Usage, options and troubleshooting: [extension/README.md](extension/README.md).
+**WSL:** if the server runs in WSL and the browser on Windows, the default
+`http://localhost:8892/v1` still works: WSL forwards `localhost` to Windows.
 
 ## Licences
 
@@ -191,7 +182,7 @@ shell's environment. The file holds `KEY=VALUE` lines (blank lines and `#` comme
 surrounding quotes stripped); it is parsed, not executed. A variable already set in the calling
 environment wins over the file. `start` waits for neither process, so it returns at once.
 
-The reader extension does not call the relay directly and needs no `RELAY_ALLOWED_ORIGINS` entry.
+Lektor TTS does not call the relay directly and needs no `RELAY_ALLOWED_ORIGINS` entry.
 
 Check it locally:
 
@@ -204,7 +195,7 @@ curl -s http://127.0.0.1:8891/health   # {"ok":true} while relay and server are 
 `narrate/` is a second small Node process in front of the relay for browser extensions that speak
 their own protocol instead of anytts:
 
-- **Reader extension** (`extension/`) and **Read Aloud** and other OpenAI-compatible clients:
+- **[Lektor TTS](https://github.com/gmotyl/lektor-tts)** and **Read Aloud** and other OpenAI-compatible clients:
   `GET /v1/models`, `GET /v1/audio/voices`, `POST /v1/audio/speech`.
 - **Narrate** (Chrome extension, reads the open article): `GET /config` lists voices,
   `WS /stream?voice=<id>` streams PCM16 mono 24 kHz, `POST /download` returns an mp3.
@@ -229,15 +220,15 @@ read from `relay.env`:
 | Variable                   | Default     | Notes                                                       |
 | -------------------------- | ----------- | ----------------------------------------------------------- |
 | `NARRATE_HOST`             | `127.0.0.1` | keep it on loopback                                         |
-| `NARRATE_PORT`             | `8892`      | the reader extension's default base URL uses it              |
+| `NARRATE_PORT`             | `8892`      | Lektor TTS's omnivoice-server preset uses it                 |
 | `NARRATE_SERVE_HTTPS_PORT` | `8444`      | only for `status`: the tailnet HTTPS port it expects to map to the adapter |
 
 ## Reader extension
 
-`extension/` is our own Chrome / Edge extension: it reads the page's article or the selection
-aloud through the adapter above (`http://localhost:8892/v1` by default), highlighting each sentence
-in place. Setup: [Quick start](#quick-start-read-web-pages-aloud); usage and options:
-[extension/README.md](extension/README.md).
+The reader extension is now [Lektor TTS](https://github.com/gmotyl/lektor-tts), in its own repo:
+it reads the page's article or the selection aloud through the adapter above, highlighting each
+sentence in place. Install, setup and usage: the lektor-tts README; with this server, pick its
+omnivoice-server preset ([Quick start](#quick-start-read-web-pages-aloud), step 4).
 
 ## Using it from other devices (optional, Tailscale)
 
@@ -269,7 +260,7 @@ the machine's MagicDNS name, see `tailscale status`):
 | Client                                   | URL to enter                                  |
 | ---------------------------------------- | --------------------------------------------- |
 | anytts in a browser page                 | `https://<host>.<tailnet>.ts.net:8443` (relay; the page's origin must be in `RELAY_ALLOWED_ORIGINS`) |
-| Reader extension, "Server base URL"      | `https://<host>.<tailnet>.ts.net:8444/v1` (Save asks for the host permission) |
+| Lektor TTS, "Server address"             | `https://<host>.<tailnet>.ts.net:8444/v1` (Save asks for the host permission) |
 | Narrate (Chrome), "Server URL"           | `https://<host>.<tailnet>.ts.net:8444`        |
 | Read Aloud / OpenAI-compatible, base URL | `https://<host>.<tailnet>.ts.net:8444/v1`     |
 | Health check                             | `https://<host>.<tailnet>.ts.net:8443/health` (relay + server), `:8444/health` (adapter) |
@@ -359,3 +350,7 @@ The voice's reference clip as `audio/wav`. 404 if the voice is unknown or has no
 ### `GET /health`
 
 `ok` (model loaded), `device`, `cuda`, `vram_mib`, `num_step`, `load_s`.
+
+Created by Greg Motyl — [github.com/gmotyl](https://github.com/gmotyl)
+
+[![BuyMeACoffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/motyl.dev)
