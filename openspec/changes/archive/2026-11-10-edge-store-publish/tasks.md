@@ -84,4 +84,4 @@
 **Verification: non-testable** — Run: `git -C /srv/git/prv/lektor-tts tag -l v1.0.0` — Expected: `v1.0.0` after publication.
 
 - [x] **Step 1: Smoke in Edge, record results**
-- [ ] **Step 2: Greg submits; then add store URL to both READMEs (PRs) and tag `v1.0.0`**
+- [x] **Step 2: Greg submits; then add store URL to both READMEs (PRs) and tag `v1.0.0`**
