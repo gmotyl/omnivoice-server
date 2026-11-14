@@ -15,8 +15,10 @@ Voices:
   - "auto"                model picks a voice (varies per call)
   - "design:<attrs>"      voice design, e.g. "design:female, low pitch" (stable for en/zh only)
 
-Env: OMNIVOICE_HOST (127.0.0.1), OMNIVOICE_PORT (8890), OMNIVOICE_STEPS (16),
-     OMNIVOICE_DEVICE (cuda:0), OMNIVOICE_DEFAULT_VOICE (auto),
+Env: OMNIVOICE_HOST (127.0.0.1), OMNIVOICE_PORT (8890),
+     OMNIVOICE_DEVICE (cuda:0 when CUDA is available, else cpu; mps only when set explicitly),
+     OMNIVOICE_STEPS (16 on a cuda device, 8 on any other; an explicit value wins),
+     OMNIVOICE_DEFAULT_VOICE (auto),
      OMNIVOICE_VOICES_DIR (voices), OMNIVOICE_CUSTOM_DIR (voices-custom); relative to this file
      OMNIVOICE_NORMALIZE (on): spell out numbers/units for pl/en before synthesis; 0/false/off disable
      OMNIVOICE_SPEED (0.9): speed used when a request sends none; at 1.0 the model's duration
@@ -37,6 +39,7 @@ import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Literal
 
 import numpy as np
@@ -53,9 +56,29 @@ SR = 24000
 ROOT = Path(__file__).parent
 HOST = os.environ.get("OMNIVOICE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("OMNIVOICE_PORT", "8890"))
-STEPS = int(os.environ.get("OMNIVOICE_STEPS", "16"))
 DEFAULT_SPEED = float(os.environ.get("OMNIVOICE_SPEED", "0.9"))
-DEVICE = os.environ.get("OMNIVOICE_DEVICE", "cuda:0")
+
+
+def resolve_device(env: Mapping[str, str], cuda_available: bool) -> str:
+    """OMNIVOICE_DEVICE verbatim when set; else cuda:0 with CUDA, else cpu. Never mps on its own
+    (upstream MPS support is broken; it stays an explicit opt-in)."""
+    explicit = env.get("OMNIVOICE_DEVICE", "")
+    if explicit:
+        return explicit
+    return "cuda:0" if cuda_available else "cpu"
+
+
+def resolve_steps(env: Mapping[str, str], device: str) -> int:
+    """OMNIVOICE_STEPS when set (any device); else 16 on a cuda device and 8 elsewhere, where
+    16 steps are too slow on CPU for interactive speech."""
+    explicit = env.get("OMNIVOICE_STEPS", "")
+    if explicit:
+        return int(explicit)
+    return 16 if device.startswith("cuda") else 8
+
+
+DEVICE = resolve_device(os.environ, torch.cuda.is_available())
+STEPS = resolve_steps(os.environ, DEVICE)
 DEFAULT_VOICE = os.environ.get("OMNIVOICE_DEFAULT_VOICE", "auto")
 
 
@@ -146,7 +169,7 @@ async def lifespan(_: FastAPI):
     state["voices"] = load_voices()
     state["model"].generate(text="Warm up.", language="en", num_step=STEPS)  # pay CUDA init before first request
     state["load_s"] = round(time.perf_counter() - t, 1)
-    print(f"omnivoice ready in {state['load_s']}s on {DEVICE}, voices: {list(state['voices'])}", flush=True)
+    print(f"omnivoice ready in {state['load_s']}s on {DEVICE} ({STEPS} steps), voices: {list(state['voices'])}", flush=True)
     yield
     state.clear()
 
