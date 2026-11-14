@@ -161,6 +161,25 @@ stop_server() {
   echo "server: stopped (pid $pid)"
 }
 
+# detach: sets DETACH to the command prefix that starts a process in its own session under nohup,
+# so the caller (boot command, terminal, panel) can exit without taking it down. `setsid` where it
+# exists (Linux: exactly the old `setsid nohup`); otherwise (macOS) a python3 shim that calls
+# setsid() and execs the target, so $! is still the real pid and its argv is the target's (which
+# ours() matches). With neither, fail here, in the foreground, instead of starting an undetached
+# process. A prefix rather than a wrapper function: a function run with `&` is a subshell, so $!
+# would name the subshell, and `env VAR=... <prefix> cmd` needs real executables to exec.
+DETACH=()
+detach() {
+  if command -v setsid >/dev/null 2>&1; then
+    DETACH=(setsid nohup)
+  elif command -v python3 >/dev/null 2>&1; then
+    DETACH=(nohup python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])')
+  else
+    echo "cannot start detached: neither setsid nor python3 found (macOS: xcode-select --install)" >&2
+    return 1
+  fi
+}
+
 # --- server -----------------------------------------------------------------------------------
 
 start_server() {
@@ -174,10 +193,11 @@ start_server() {
     echo "server: already answering on 127.0.0.1:$PORT (not started by this ctl), not starting another"
     return 0
   fi
+  detach
   mkdir -p "$DIR/run" "$DIR/logs"
   cd "$DIR"
   # Detach fully so the caller (boot command, terminal) can exit.
-  setsid nohup "$DIR/.venv/bin/python" -W ignore server.py >>"$LOG" 2>&1 </dev/null &
+  "${DETACH[@]}" "$DIR/.venv/bin/python" -W ignore server.py >>"$LOG" 2>&1 </dev/null &
   echo $! >"$PIDFILE"
   echo "server: started (pid $!), log: $LOG"
 }
@@ -256,11 +276,12 @@ start_node() {
     echo "$label: not started, dependencies missing (run: cd $DIR/$sub && npm install)" >&2
     return 0
   fi
+  detach
   mkdir -p "$DIR/run" "$DIR/logs"
   cd "$DIR/$sub"
   # No wait for the process (or the server) to answer: the ctl returns at once, well within the
-  # caller's time budget. `env` execs, so $! is the node pid.
-  env "$@" setsid nohup "$node" server.mjs >>"$log" 2>&1 </dev/null &
+  # caller's time budget. `env` execs (as do setsid, nohup and the shim), so $! is the node pid.
+  env "$@" "${DETACH[@]}" "$node" server.mjs >>"$log" 2>&1 </dev/null &
   echo $! >"$pidfile"
   echo "$label: started (pid $!, $node), log: $log"
 }
