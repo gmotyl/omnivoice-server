@@ -20,7 +20,8 @@ if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4))); 
   exit 2
 fi
 
-DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# readlink -f is missing on macOS before 12.3; fall back to $0 (pwd -P still resolves the dir).
+DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")" && pwd -P)"
 PIDFILE="$DIR/run/omnivoice.pid"
 LOG="$DIR/logs/server.log"
 RELAY_PIDFILE="$DIR/run/relay.pid"
@@ -120,6 +121,10 @@ ours() {
   else
     [[ "$(proc_cwd "$pid")" == "$cwd" ]] || return 1
     read -r -a argv <<<"$(ps -o args= -p "$pid" 2>/dev/null || true)" || return 1
+    # ps flattens argv, so words inside a quoted argument look like arguments. This ctl always
+    # starts the script as the last argument; only that word may match.
+    ((${#argv[@]})) || return 1
+    argv=("${argv[-1]}")
   fi
   for arg in "${argv[@]}"; do
     case "$arg" in
