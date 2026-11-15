@@ -5,7 +5,8 @@ Local [OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) TTS behind an OpenAI-
 
 It comes with everything needed to read web pages aloud in your own voice catalog:
 
-- **the server** (`server.py`, port 8890): OmniVoice on your GPU;
+- **the server** (`server.py`, port 8890): OmniVoice on your GPU (Linux/WSL with CUDA), or on the
+  CPU of an Apple Silicon Mac;
 - **the relay** (`relay/`, port 8891): a small Node process speaking the anytts protocol;
 - **the Narrate / Read Aloud adapter** (`narrate/`, port 8892): an OpenAI-compatible
   `/v1/audio/speech` endpoint in front of the relay;
@@ -19,17 +20,32 @@ Reaching them from other devices is [optional](#using-it-from-other-devices-opti
 
 ### 1. Requirements
 
+**Linux / WSL (CUDA):**
+
 - An NVIDIA GPU with CUDA.
 - [uv](https://docs.astral.sh/uv/) and `ffmpeg` on `PATH`.
 - Node 22+ with npm (relay and adapter).
-- Edge or Chrome 116+ for Lektor TTS (step 4).
+
+**macOS (Apple Silicon, CPU):**
+
+- An Apple Silicon Mac. The model runs on the CPU; MPS is not used (upstream support for it is
+  broken), so expect about 7 s per sentence at the CPU default of 8 steps, and lower quality than
+  the 16 steps used on CUDA.
+- Homebrew: `brew install bash ffmpeg uv node`. `omnivoicectl` needs bash 4.4+ and re-runs itself
+  under Homebrew's bash when started by the stock `/bin/bash` 3.2.
+- The Xcode command line tools (`xcode-select --install`) for `python3`, which the ctl uses for
+  its health probe and to detach processes (macOS has no `setsid`).
+
+**Both:** Edge or Chrome 116+ for Lektor TTS (step 4).
 
 ### 2. Get the code and install the dependencies
+
+The same commands on both platforms; `uv.lock` resolves torch per platform:
 
 ```bash
 git clone https://github.com/gmotyl/omnivoice-server.git
 cd omnivoice-server
-uv sync --frozen                     # Python 3.12, torch 2.8.0+cu128, omnivoice 0.2.1
+uv sync --frozen                     # Python 3.12, omnivoice 0.2.1; torch 2.8.0+cu128 on Linux, 2.8.0 on macOS
 (cd relay && npm install)
 (cd narrate && npm install)
 ```
@@ -98,8 +114,9 @@ invoking user's home from passwd) and `HF_HUB_OFFLINE=1` unless you set them, in
 in `relay.env`; the pid goes in `run/`, the log in
 `logs/server.log`.
 
-Env: `OMNIVOICE_HOST` (127.0.0.1), `OMNIVOICE_PORT` (8890), `OMNIVOICE_STEPS` (16),
-`OMNIVOICE_DEVICE` (cuda:0), `OMNIVOICE_DEFAULT_VOICE` (auto), `OMNIVOICE_VOICES_DIR` (voices),
+Env: `OMNIVOICE_HOST` (127.0.0.1), `OMNIVOICE_PORT` (8890), `OMNIVOICE_DEVICE` (cuda:0 when CUDA
+is available, else cpu; never mps on its own, set it to use mps), `OMNIVOICE_STEPS` (16 on cuda,
+8 on cpu; an explicit value wins), `OMNIVOICE_DEFAULT_VOICE` (auto), `OMNIVOICE_VOICES_DIR` (voices),
 `OMNIVOICE_CUSTOM_DIR` (voices-custom), `OMNIVOICE_NORMALIZE` (on; `0`, `false` or `off` turns
 [text normalisation](#text-normalisation) off), `OMNIVOICE_SPEED` (0.9; the speed used when a
 request sends none — at 1.0 several voices drop words because the duration estimate is too

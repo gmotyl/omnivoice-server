@@ -6,7 +6,22 @@
 # Safe to call from the WSL [boot] command: it sets its own PATH/HOME and never blocks.
 set -euo pipefail
 
-DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# The ctl needs bash >= 4.4 (`mapfile -d ''`, empty arrays under `set -u`). Stock macOS /bin/bash
+# is 3.2: re-exec under a Homebrew bash >= 4.4 when one is installed. Kept 3.2-clean; ${1+"$@"}
+# because bash 3.2 treats an empty "$@" as unbound under `set -u`.
+if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4))); then
+  for _bash in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    if [[ -x "$_bash" ]] &&
+      "$_bash" -c '((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4)))' 2>/dev/null; then
+      exec "$_bash" "$0" ${1+"$@"}
+    fi
+  done
+  echo "omnivoicectl needs bash >= 4.4 (macOS: brew install bash)" >&2
+  exit 2
+fi
+
+# readlink -f is missing on macOS before 12.3; fall back to $0 (pwd -P still resolves the dir).
+DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")" && pwd -P)"
 PIDFILE="$DIR/run/omnivoice.pid"
 LOG="$DIR/logs/server.log"
 RELAY_PIDFILE="$DIR/run/relay.pid"
@@ -24,7 +39,11 @@ if [[ -z "${HOME:-}" ]]; then
   HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)"
   export HOME="${HOME:-/root}"
 fi
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+PINNED_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# macOS: ffmpeg, node and uv come from Homebrew, and the panel or launchd start the ctl without a
+# login PATH. Absent on Linux, so PATH stays as it was there.
+if [[ -d /opt/homebrew/bin ]]; then PINNED_PATH="/opt/homebrew/bin:$PINNED_PATH"; fi
+export PATH="$PINNED_PATH:$PATH"
 
 # Optional, gitignored $DIR/relay.env: KEY=VALUE lines (blank lines and # comments skipped,
 # one pair of surrounding quotes stripped) for the relay and this ctl, so RELAY_ALLOWED_ORIGINS
@@ -71,13 +90,49 @@ NARRATE_SERVE_HTTPS_PORT="${NARRATE_SERVE_HTTPS_PORT:-8444}"
 # this checkout's script: <script> or ./<script> (relative to <cwd>) or <cwd>/<script>. A same
 # basename elsewhere (/tmp/server.py), a reused pid or a sibling clone's process is not ours and
 # is never signalled.
+# Linux reads cwd and argv from /proc. Without /proc (macOS) cwd comes from lsof and argv from
+# `ps -o args=` split on whitespace; no lsof there means nothing is ours. Known limit: ps joins
+# argv with spaces, so on macOS a checkout path containing a space never matches (identity is
+# not guaranteed for such a checkout).
+HAS_PROC=
+if [[ -r "/proc/$$/cmdline" ]]; then HAS_PROC=1; fi
+
+# proc_cwd <pid>: the cwd of <pid> from lsof (the `n` line of -Fn), empty when unknown.
+proc_cwd() {
+  local line
+  command -v lsof >/dev/null 2>&1 || return 0
+  while IFS= read -r line; do
+    if [[ "$line" == n* ]]; then
+      printf '%s' "${line#n}"
+      return 0
+    fi
+  done < <(lsof -a -p "$1" -d cwd -Fn 2>/dev/null || true)
+  return 0
+}
+
 ours() {
   local pid="$1" script="$2" cwd="$3" arg match=
   local -a argv=()
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  [[ "$(readlink "/proc/$pid/cwd" 2>/dev/null)" == "$cwd" ]] || return 1
-  mapfile -d '' -t argv <"/proc/$pid/cmdline" 2>/dev/null || return 1
+  if [[ -n "$HAS_PROC" ]]; then
+    [[ "$(readlink "/proc/$pid/cwd" 2>/dev/null)" == "$cwd" ]] || return 1
+    mapfile -d '' -t argv <"/proc/$pid/cmdline" 2>/dev/null || return 1
+  else
+    [[ "$(proc_cwd "$pid")" == "$cwd" ]] || return 1
+    read -r -a argv <<<"$(ps -o args= -p "$pid" 2>/dev/null || true)" || return 1
+    # ps flattens argv, so words inside a quoted argument look like arguments. Accept only the
+    # exact shape this ctl launches: <interpreter> server.mjs, or <python> -W ignore server.py.
+    local -a want=("$script")
+    [[ "$script" == *.py ]] && want=(-W ignore "$script")
+    ((${#argv[@]} == ${#want[@]} + 1)) || return 1
+    case "$script:${argv[0]##*/}" in
+      *.mjs:node | *.py:python | *.py:python3 | *.py:python3.[0-9]*) ;;
+      *) return 1 ;;
+    esac
+    [[ "${argv[*]:1}" == "${want[*]}" ]]
+    return
+  fi
   for arg in "${argv[@]}"; do
     case "$arg" in
       "$script" | "./$script" | "$cwd/$script") match=1; break ;;
@@ -103,11 +158,19 @@ pid_alive() { alive "$PIDFILE" server.py "$DIR"; }
 # node_orphans <subdir>: node processes of this DIR (server.mjs run from $DIR/<subdir>) that run
 # without (or with a stale) pid file, e.g. after run/ was wiped.
 node_orphans() {
-  local p pid
-  for p in /proc/[0-9]*; do
-    pid="${p#/proc/}"
-    ours "$pid" server.mjs "$DIR/$1" && printf '%s\n' "$pid"
-  done
+  local p pid args
+  if [[ -n "$HAS_PROC" ]]; then
+    for p in /proc/[0-9]*; do
+      pid="${p#/proc/}"
+      ours "$pid" server.mjs "$DIR/$1" && printf '%s\n' "$pid"
+    done
+  else
+    # One ps for the whole table; lsof (slow) only for processes that run a server.mjs.
+    while read -r pid args; do
+      [[ "$args" == *server.mjs* ]] || continue
+      ours "$pid" server.mjs "$DIR/$1" && printf '%s\n' "$pid"
+    done < <(ps -ax -o pid= -o args= 2>/dev/null || true)
+  fi
   return 0
 }
 
@@ -143,6 +206,25 @@ stop_server() {
   echo "server: stopped (pid $pid)"
 }
 
+# detach: sets DETACH to the command prefix that starts a process in its own session under nohup,
+# so the caller (boot command, terminal, panel) can exit without taking it down. `setsid` where it
+# exists (Linux: exactly the old `setsid nohup`); otherwise (macOS) a python3 shim that calls
+# setsid() and execs the target, so $! is still the real pid and its argv is the target's (which
+# ours() matches). With neither, fail here, in the foreground, instead of starting an undetached
+# process. A prefix rather than a wrapper function: a function run with `&` is a subshell, so $!
+# would name the subshell, and `env VAR=... <prefix> cmd` needs real executables to exec.
+DETACH=()
+detach() {
+  if command -v setsid >/dev/null 2>&1; then
+    DETACH=(setsid nohup)
+  elif command -v python3 >/dev/null 2>&1; then
+    DETACH=(nohup python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])')
+  else
+    echo "cannot start detached: neither setsid nor python3 found (macOS: xcode-select --install)" >&2
+    return 1
+  fi
+}
+
 # --- server -----------------------------------------------------------------------------------
 
 start_server() {
@@ -156,10 +238,11 @@ start_server() {
     echo "server: already answering on 127.0.0.1:$PORT (not started by this ctl), not starting another"
     return 0
   fi
+  detach
   mkdir -p "$DIR/run" "$DIR/logs"
   cd "$DIR"
   # Detach fully so the caller (boot command, terminal) can exit.
-  setsid nohup "$DIR/.venv/bin/python" -W ignore server.py >>"$LOG" 2>&1 </dev/null &
+  "${DETACH[@]}" "$DIR/.venv/bin/python" -W ignore server.py >>"$LOG" 2>&1 </dev/null &
   echo $! >"$PIDFILE"
   echo "server: started (pid $!), log: $LOG"
 }
@@ -238,11 +321,12 @@ start_node() {
     echo "$label: not started, dependencies missing (run: cd $DIR/$sub && npm install)" >&2
     return 0
   fi
+  detach
   mkdir -p "$DIR/run" "$DIR/logs"
   cd "$DIR/$sub"
   # No wait for the process (or the server) to answer: the ctl returns at once, well within the
-  # caller's time budget. `env` execs, so $! is the node pid.
-  env "$@" setsid nohup "$node" server.mjs >>"$log" 2>&1 </dev/null &
+  # caller's time budget. `env` execs (as do setsid, nohup and the shim), so $! is the node pid.
+  env "$@" "${DETACH[@]}" "$node" server.mjs >>"$log" 2>&1 </dev/null &
   echo $! >"$pidfile"
   echo "$label: started (pid $!, $node), log: $log"
 }
