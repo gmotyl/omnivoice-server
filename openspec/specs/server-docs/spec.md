@@ -28,3 +28,21 @@ The omnivoice-server README ends with the creator footer.
 #### Scenario: Footer
 - **WHEN** the README ends
 - **THEN** it shows "Created by Greg Motyl — github.com/gmotyl" and the yellow Buy Me a Coffee badge linking to `https://buymeacoffee.com/motyl.dev`
+
+### Requirement: Per-platform setup in the Quick start
+The Quick start's requirements and install steps cover Linux/WSL (CUDA) and macOS (CPU) side by side, keeping the existing anchor.
+
+#### Scenario: Linux/WSL block unchanged in substance
+- **WHEN** a reader follows the Linux/WSL path of "Quick start: read web pages aloud"
+- **THEN** it still asks for an NVIDIA GPU with CUDA, uv, ffmpeg and Node 22+, and installs with `uv sync --frozen` (torch `2.8.0+cu128`)
+
+#### Scenario: macOS block
+- **WHEN** a reader follows the macOS path
+- **THEN** it lists Apple Silicon on CPU (no MPS), `brew install bash ffmpeg uv node`, the same `uv sync --frozen`, an expected latency of about 7 s per sentence at the CPU default of 8 steps, and that quality is lower than at 16 steps
+
+### Requirement: Env defaults documented per device
+The README's "Run" env list documents `OMNIVOICE_DEVICE` (cuda:0 when CUDA is available, else cpu; never mps on its own) and `OMNIVOICE_STEPS` (16 on cuda, 8 on cpu; an explicit value wins).
+
+#### Scenario: Env list
+- **WHEN** the README's "Run" env list is read
+- **THEN** it states both per-device defaults as above, and the requirements no longer say an NVIDIA GPU is mandatory on every platform
