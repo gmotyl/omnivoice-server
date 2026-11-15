@@ -126,6 +126,10 @@ ours() {
     local -a want=("$script")
     [[ "$script" == *.py ]] && want=(-W ignore "$script")
     ((${#argv[@]} == ${#want[@]} + 1)) || return 1
+    case "$script:${argv[0]##*/}" in
+      *.mjs:node | *.py:python | *.py:python3 | *.py:python3.[0-9]*) ;;
+      *) return 1 ;;
+    esac
     [[ "${argv[*]:1}" == "${want[*]}" ]]
     return
   fi
