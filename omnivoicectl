@@ -121,10 +121,13 @@ ours() {
   else
     [[ "$(proc_cwd "$pid")" == "$cwd" ]] || return 1
     read -r -a argv <<<"$(ps -o args= -p "$pid" 2>/dev/null || true)" || return 1
-    # ps flattens argv, so words inside a quoted argument look like arguments. This ctl always
-    # starts the script as the last argument; only that word may match.
-    ((${#argv[@]})) || return 1
-    argv=("${argv[-1]}")
+    # ps flattens argv, so words inside a quoted argument look like arguments. Accept only the
+    # exact shape this ctl launches: <interpreter> server.mjs, or <python> -W ignore server.py.
+    local -a want=("$script")
+    [[ "$script" == *.py ]] && want=(-W ignore "$script")
+    ((${#argv[@]} == ${#want[@]} + 1)) || return 1
+    [[ "${argv[*]:1}" == "${want[*]}" ]]
+    return
   fi
   for arg in "${argv[@]}"; do
     case "$arg" in
