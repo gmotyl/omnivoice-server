@@ -81,9 +81,9 @@ curl -s http://127.0.0.1:8892/v1/audio/voices   # {"voices":["auto", ...]}
 ### 4. Install Lektor TTS
 
 [Lektor TTS](https://github.com/gmotyl/lektor-tts) is the browser extension that reads the open
-page aloud through the adapter, highlighting each sentence. It now lives in its own repo; the
-Edge Add-ons link is added here once the store listing is published. Until then, install it as
-described in the lektor-tts README.
+page aloud through the adapter, highlighting each sentence. It now lives in its own repo.
+Install it from [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/lektor-tts/bpmjjpjbldkcnbkjhiclhmkhlemicgod) (a Chrome Web Store link
+follows once it is approved), or from source as described in the lektor-tts README.
 
 On Lektor's setup screen (it opens on install), pick the **omnivoice-server** preset: its address
 `http://localhost:8892/v1` is the adapter started above. Press **Save and test**, then open an
