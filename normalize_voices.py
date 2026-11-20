@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -23,7 +24,8 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-CUSTOM = Path(__file__).parent / "voices-custom"
+_custom = Path(os.environ.get("OMNIVOICE_CUSTOM_DIR", "voices-custom"))  # same rule as server.py
+CUSTOM = _custom if _custom.is_absolute() else Path(__file__).parent / _custom
 TWINS = {"en": "en-GB", "pl": "pl-PL"}
 TEST = {
     "en": "In 2025 about 1,250 people paid $19.99 each, and 37% of them came back before the 3rd of May.",

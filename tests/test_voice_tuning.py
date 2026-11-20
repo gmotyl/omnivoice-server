@@ -41,3 +41,12 @@ def test_lock_language_beats_the_request_language(voices_dir, custom_dir, make_c
     assert server.state["model"].generate_calls[-1]["language"] == "pl"
     client.post("/v1/audio/speech", json={"input": "hi", "voice": "ala", "language": "en"})
     assert server.state["model"].generate_calls[-1]["language"] == "en"
+
+
+def test_default_voice_gain_applies_when_request_omits_voice(voices_dir, custom_dir, make_client, monkeypatch):
+    write_voice(custom_dir, "dflt", {**BASE, "gain_db": -6.0})
+    monkeypatch.setattr(server, "DEFAULT_VOICE", "dflt")
+    client = make_client()
+    monkeypatch.setattr(server.state["model"], "generate", lambda **kw: [np.full(2400, 0.5, dtype=np.float32)])
+    res = client.post("/v1/audio/speech", json={"input": "hi", "response_format": "pcm"})
+    assert abs((np.frombuffer(res.content, dtype="<i2") / 32767).max() - 0.5 * 10 ** (-6 / 20)) < 1e-3

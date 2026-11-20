@@ -243,7 +243,8 @@ async def speech(req: SpeechRequest) -> Response:
         t = time.perf_counter()
         audio = (await asyncio.to_thread(state["model"].generate, **kwargs))[0]
         gen_s = time.perf_counter() - t
-    gain_db = state["voices"][req.voice].gain_db if req.voice in state["voices"] else 0.0
+    voice = state["voices"].get(req.voice or DEFAULT_VOICE)
+    gain_db = voice.gain_db if voice else 0.0
     if gain_db:
         audio = np.clip(audio * 10 ** (gain_db / 20), -1.0, 1.0)
     body = encode(audio, req.response_format)
