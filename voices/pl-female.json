@@ -5,5 +5,6 @@
   "gender": "female",
   "label": "Polish, young (spike)",
   "multilingual": false,
-  "ref_text": "Dzień dobry. Będę dzisiaj czytać na głos odpowiedzi z panelu, spokojnie i wyraźnie."
+  "ref_text": "Dzień dobry. Będę dzisiaj czytać na głos odpowiedzi z panelu, spokojnie i wyraźnie.",
+  "hidden": true
 }
