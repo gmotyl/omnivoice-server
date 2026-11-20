@@ -79,6 +79,7 @@ def main() -> None:
                 jp = CUSTOM / f"{twin}.json"
                 rec = json.loads(jp.read_text())
                 rec["gain_db"] = gain
+                rec["lock_language"] = True
                 jp.write_text(json.dumps(rec, ensure_ascii=False, indent=2) + "\n")
                 print(f"{twin}: gain_db {gain:+.1f}", flush=True)
             for ext in (".pt", ".json", ".wav"):

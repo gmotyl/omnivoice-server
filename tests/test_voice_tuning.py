@@ -31,3 +31,13 @@ def test_voice_gain_scales_the_audio(voices_dir, custom_dir, make_client, monkey
     res = client.post("/v1/audio/speech", json={"input": "hi", "voice": "quieter", "response_format": "pcm"})
     samples = np.frombuffer(res.content, dtype="<i2") / 32767
     assert abs(samples.max() - 0.5 * 10 ** (-6 / 20)) < 1e-3
+
+
+def test_lock_language_beats_the_request_language(voices_dir, custom_dir, make_client):
+    write_voice(custom_dir, "ala-pl", {**BASE, "language": "pl", "locale": "pl-PL", "lock_language": True})
+    write_voice(custom_dir, "ala", {**BASE, "language": "pl", "locale": "pl-PL"})
+    client = make_client()
+    client.post("/v1/audio/speech", json={"input": "hi", "voice": "ala-pl", "language": "en"})
+    assert server.state["model"].generate_calls[-1]["language"] == "pl"
+    client.post("/v1/audio/speech", json={"input": "hi", "voice": "ala", "language": "en"})
+    assert server.state["model"].generate_calls[-1]["language"] == "en"

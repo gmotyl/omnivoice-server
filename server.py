@@ -137,6 +137,8 @@ class Voice:
         self.hidden = bool(meta.get("hidden", False))
         self.gain_db = float(meta.get("gain_db") or 0.0)
         self.speed = float(meta.get("speed") or 1.0)
+        # `lock_language`: the voice's own language beats a request's `language` (the -en/-pl twins).
+        self.lock_language = bool(meta.get("lock_language", False))
 
     @property
     def language(self) -> str | None:
@@ -225,7 +227,7 @@ def build_kwargs(req: SpeechRequest) -> dict:
         if v is None:
             raise HTTPException(404, f"unknown voice '{voice}'; see GET /v1/voices")
         kwargs["voice_clone_prompt"] = v.prompt
-        language = language or v.language
+        language = v.language if v.lock_language and v.language else (language or v.language)
     if language:
         kwargs["language"] = language
         if NORMALIZE_ENABLED:
