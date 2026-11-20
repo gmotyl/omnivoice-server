@@ -131,6 +131,12 @@ class Voice:
     def __init__(self, name: str, prompt: VoiceClonePrompt, source: str, meta: dict):
         self.name, self.prompt, self.source = name, prompt, source
         self.meta = {field: meta.get(field) for field in META_FIELDS}
+        # Tuning fields kept in the .json but not exposed in the record: `hidden` drops the voice
+        # from GET /v1/voices (it still synthesises by name), `gain_db` levels its output and
+        # `speed` multiplies the effective speed (1.0 = unchanged).
+        self.hidden = bool(meta.get("hidden", False))
+        self.gain_db = float(meta.get("gain_db") or 0.0)
+        self.speed = float(meta.get("speed") or 1.0)
 
     @property
     def language(self) -> str | None:
@@ -206,6 +212,9 @@ def build_kwargs(req: SpeechRequest) -> dict:
     voice = req.voice or DEFAULT_VOICE
     kwargs: dict = {"text": req.input, "num_step": req.num_step or STEPS}
     speed = req.speed or DEFAULT_SPEED
+    v = state["voices"].get(voice)
+    if v is not None:
+        speed *= v.speed
     if speed != 1.0:
         kwargs["speed"] = speed
     language = req.language
@@ -232,6 +241,9 @@ async def speech(req: SpeechRequest) -> Response:
         t = time.perf_counter()
         audio = (await asyncio.to_thread(state["model"].generate, **kwargs))[0]
         gen_s = time.perf_counter() - t
+    gain_db = state["voices"][req.voice].gain_db if req.voice in state["voices"] else 0.0
+    if gain_db:
+        audio = np.clip(audio * 10 ** (gain_db / 20), -1.0, 1.0)
     body = encode(audio, req.response_format)
     return Response(
         content=body,
@@ -243,7 +255,7 @@ async def speech(req: SpeechRequest) -> Response:
 @app.get("/v1/voices")
 def voices() -> dict:
     auto = {"id": "auto", "source": None, **{f: None for f in META_FIELDS}, "description": "model-chosen, varies per call"}
-    return {"default": DEFAULT_VOICE, "voices": [auto, *(v.record() for v in state["voices"].values())]}
+    return {"default": DEFAULT_VOICE, "voices": [auto, *(v.record() for v in state["voices"].values() if not v.hidden)]}
 
 
 def to_wav(src: Path, dst: Path) -> None:

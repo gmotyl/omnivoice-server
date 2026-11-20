@@ -5,5 +5,6 @@
   "gender": "male",
   "label": "Lively, expressive comic voice, seed 14 (voice design)",
   "multilingual": true,
-  "ref_text": "Here, at the edge of the forest, the morning light reveals a world that is quietly waking up."
+  "ref_text": "Here, at the edge of the forest, the morning light reveals a world that is quietly waking up.",
+  "hidden": true
 }
