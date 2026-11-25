@@ -1,8 +1,11 @@
 """Text normalisation for Polish and English: written-only tokens become spoken words.
 
-`normalize(text, language)` masks protected spans (OmniVoice bracket tags, URLs, file paths,
-identifiers), runs the ordered list of named passes in `PASSES`, and restores the masked spans
-byte for byte. It never raises: a pass that throws is skipped and logged.
+`normalize(text, language)` masks protected spans (OmniVoice bracket tags, URLs, file paths, hex
+runs of 7 or more, identifiers with `_`, `.`, `=` or `/`), runs the ordered list of named passes
+in `PASSES`, and restores the masked spans byte for byte. Tokens made only of letters and digits
+are not masked: line references (`L27–33`) become "lines 27 to 33" and other glued numbers are
+split (`HTML5` → `HTML 5`) so the passes speak the digits. It never raises: a pass that throws is
+skipped and logged.
 
 See openspec/changes/text-normalisation/design.md § Rewrite order for the pass order.
 """

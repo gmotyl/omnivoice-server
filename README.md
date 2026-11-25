@@ -153,8 +153,13 @@ so the model says them and its duration estimate matches what is said. All-caps 
 - **Scope:** `pl` and `en` only; any other language passes through unchanged. A locale such as
   `pl-PL` is reduced to `pl`.
 - **Language:** the request's `language`, else the voice's.
-- **Untouched:** bracket tags (`[laughter]`), URLs, paths and identifiers (`OMNIVOICE_STEPS=16`,
-  `v1.2.3`).
+- **Line references:** a capital `L` with a line number or range is spoken as lines: `L27–33` →
+  "lines twenty-seven to thirty-three" (pl "linie … do …"), `L120` → "line one hundred and
+  twenty". A single `L<n>` needs at least two digits; a lowercase `l` never counts.
+- **Glued numbers:** a token of letters and digits is split at each letter/digit boundary and the
+  digits are spoken: `L5` → "L five", `HTML5` → "HTML five".
+- **Untouched:** bracket tags (`[laughter]`), URLs, paths, hex runs of 7 or more (`7d1a98c`) and
+  identifiers with `_`, `.`, `=` or `/` (`x86_64`, `OMNIVOICE_STEPS=16`, `v1.2.3`).
 - **Switch:** on by default; `OMNIVOICE_NORMALIZE=0|false|off` turns it off. It is read at startup,
   so restart the server to change it.
 

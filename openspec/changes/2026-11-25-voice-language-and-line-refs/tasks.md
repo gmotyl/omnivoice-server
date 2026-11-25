@@ -75,6 +75,6 @@
 
 **Verification (non-testable):** Run the test command. Expected: all pass. Also run `PYTHONPATH=. uv run -q --no-project --python '>=3.11' --with num2words python -c "from normalize import normalize; print(normalize('src/app.config.ts · L27–33 and L5', 'en'))"`. Expected: `src/app.config.ts · lines twenty-seven to thirty-three and L five`.
 
-- [ ] **Step 1: Update the docs; run the verification**
-- [ ] **Step 2: Commit, push the branch, open a PR** against `gmotyl/omnivoice-server:master` with the coordinated pavilio change named in the body.
+- [x] **Step 1: Update the docs; run the verification**
+- [x] **Step 2: Commit, push the branch, open a PR** against `gmotyl/omnivoice-server:master` with the coordinated pavilio change named in the body.
 - [ ] **Step 3: Live check (human).** The server runs as root on SPOCK. Greg restarts it after the merge (`./omnivoicectl restart` as root) and plays a story line note with `bill-en`.
