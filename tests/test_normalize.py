@@ -651,7 +651,15 @@ def test_layer_name_l2_cache_spoken_as_l_two():
 
 
 @pytest.mark.parametrize(
-    ("text", "expected"), [("HTML5", "HTML five"), ("mp3", "mp three"), ("4K", "four K")]
+    ("text", "expected"),
+    [
+        ("HTML5", "HTML five"),
+        ("mp3", "mp three"),
+        ("4K", "four K"),
+        # Short hex-alphabet tokens are below the hash length of 7, so they are split.
+        ("B2B", "B two B"),
+        ("3D", "three D"),
+    ],
 )
 def test_product_and_format_names_are_split(text, expected):
     # product and format names are split (HTML5, mp3, 4K)
