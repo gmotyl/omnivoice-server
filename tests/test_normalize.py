@@ -74,7 +74,7 @@ def test_protected_spans_untouched(monkeypatch, language):
     "text", ["5.11.2026", "05.11.2026.", "1.2", "1,2", "e.g.", "U.S.", "2026.Tak", "(1.5)"]
 )
 def test_prose_numbers_and_abbreviations_not_masked(text):
-    masked, spans = nm._mask(text)
+    masked, spans = nm._mask(text, "en")
     assert spans == []
     assert masked == text
 
@@ -690,3 +690,44 @@ def test_glued_token_keeps_surrounding_punctuation(language, expected):
     # glued token keeps surrounding punctuation
     text = {"en": "use (HTML5), then", "pl": "użyj (HTML5), potem"}[language]
     assert normalize(text, language) == expected
+
+
+# --- Line references -------------------------------------------------------------------------
+
+
+def test_line_range_after_path_is_spoken_as_lines_en():
+    # line range after a path is spoken as lines (en)
+    assert (
+        normalize("src/app.config.ts · L27–33", "en")
+        == "src/app.config.ts · lines twenty-seven to thirty-three"
+    )
+
+
+def test_line_range_in_polish_uses_linie_and_do():
+    # line range in Polish uses linie and do
+    assert normalize("L27–33", "pl") == "linie dwadzieścia siedem do trzydzieści trzy"
+
+
+@pytest.mark.parametrize("text", ["L27-33", "L27–L33", "L27-L33"])
+def test_hyphen_and_second_l_ranges_are_line_references(text):
+    # hyphen and second-L ranges are line references
+    assert normalize(text, "en") == "lines twenty-seven to thirty-three"
+
+
+@pytest.mark.parametrize(
+    ("text", "language", "expected"),
+    [
+        ("see L120.", "en", "see line one hundred and twenty."),
+        ("L27", "pl", "linia dwadzieścia siedem"),
+        ("L27", "en", "line twenty-seven"),
+        ("(L27–33.)", "en", "(lines twenty-seven to thirty-three.)"),
+    ],
+)
+def test_single_line_with_two_or_more_digits(text, language, expected):
+    # single line with two or more digits (en, pl)
+    assert normalize(text, language) == expected
+
+
+def test_lowercase_l_is_not_a_line_reference():
+    # lowercase l is not a line reference: it is spoken as a glued number
+    assert normalize("l27", "en") == "l twenty-seven"

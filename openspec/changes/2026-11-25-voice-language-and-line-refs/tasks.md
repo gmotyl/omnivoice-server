@@ -63,9 +63,9 @@
 - "single line with two or more digits (en, pl)"
 - "lowercase l is not a line reference"
 
-- [ ] **Step 1: Write the failing tests.** Run the test command. Expected: FAIL
-- [ ] **Step 2: Minimal implementation.** Run the test command. Expected: PASS
-- [ ] **Step 3: Commit.** `git add normalize.py tests/test_normalize.py && git commit -m "feat(normalize): speak line references as lines"`
+- [x] **Step 1: Write the failing tests.** Run the test command. Expected: FAIL
+- [x] **Step 2: Minimal implementation.** Run the test command. Expected: PASS
+- [x] **Step 3: Commit.** `git add normalize.py tests/test_normalize.py && git commit -m "feat(normalize): speak line references as lines"`
 
 ### Task 3: Docs and gate
 

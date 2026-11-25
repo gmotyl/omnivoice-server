@@ -67,7 +67,8 @@ warning ("Normalisation never fails a request").
 
 Table-driven cases in `tests/test_normalize.py`, for both `en` and `pl`: each row above, the protected
 list, a line reference with trailing punctuation (`L27–33.`), a path followed by a line note
-(`src/app.config.ts · L27–33`), and lowercase `l27` left masked. The integer pass is then checked
+(`src/app.config.ts · L27–33`), and lowercase `l27`, which is not a line reference and is spoken as a glued number
+("l twenty-seven"), not as a line. The integer pass is then checked
 end to end ("line twenty-seven").
 
 ## Glossary

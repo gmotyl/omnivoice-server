@@ -61,6 +61,10 @@ _LETTERS_AND_DIGITS = re.compile(r"^[^\W_]+$")
 _LETTER_DIGIT_BOUNDARY = re.compile(r"(?<=[^\W\d_])(?=\d)|(?<=\d)(?=[^\W\d_])")
 # A hex run of seven or more characters with a digit and a hex letter (`7d1a98c`) is a hash.
 _HEX_RUN = re.compile(r"^[0-9a-fA-F]{7,}$")
+# A line reference: a capital `L` with a line number or a range (`L27`, `L27–33`, `L27-L33`).
+_LINE_REF = re.compile(r"^L(\d+)(?:[–-]L?(\d+))?$")
+# lang -> (one line, several lines, range word).
+_LINE_WORDS = {"en": ("line", "lines", "to"), "pl": ("linia", "linie", "do")}
 
 
 def _placeholder(index: int) -> str:
@@ -111,7 +115,22 @@ def _split_glued(core: str) -> str:
     return _LETTER_DIGIT_BOUNDARY.sub(" ", core)
 
 
-def _mask(text: str) -> tuple[str, list[str]]:
+def _line_reference(core: str, lang: str) -> str | None:
+    """`L27–33` → `lines 27 to 33`, `L120` → `line 120`; None when `core` is not a line reference.
+
+    A single digit with no range (`L2 cache`) is not a line reference. The digits are left for
+    the number passes.
+    """
+    m = _LINE_REF.match(core)
+    if not m or (m.group(2) is None and len(m.group(1)) < 2):
+        return None
+    one, many, to = _LINE_WORDS[lang]
+    if m.group(2) is None:
+        return f"{one} {m.group(1)}"
+    return f"{many} {m.group(1)} {to} {m.group(2)}"
+
+
+def _mask(text: str, lang: str) -> tuple[str, list[str]]:
     """Replace protected spans with placeholders; return the masked text and the originals."""
     spans: list[str] = []
 
@@ -130,6 +149,9 @@ def _mask(text: str) -> tuple[str, list[str]]:
         trail = core[len(stripped) :]
         if stripped and _is_path(stripped):
             return lead + keep(stripped) + trail
+        line = _line_reference(stripped, lang) if stripped else None
+        if line is not None:
+            return lead + line + trail
         if stripped and _is_glued_number(stripped):
             return lead + _split_glued(stripped) + trail
         if stripped and _is_identifier(stripped):
@@ -705,7 +727,7 @@ def normalize(text: str, language: str) -> str:
     if lang is None or not isinstance(text, str) or not text:
         return text
     try:
-        masked, spans = _mask(text)
+        masked, spans = _mask(text, lang)
     except Exception:
         log.warning("normalize: masking protected spans failed; text left unchanged", exc_info=True)
         return text
