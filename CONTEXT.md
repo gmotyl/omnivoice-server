@@ -1,7 +1,9 @@
 # omnivoice-server glossary
 
 - **Normalisation** — rewriting written-only tokens (digits, symbols, abbreviations) into the words a speaker would say, before synthesis. _Avoid:_ "text cleanup", "stripping".
-- **Protected span** — a stretch of text that normalisation must leave byte-for-byte unchanged (bracket tags, URLs, paths, identifiers).
+- **Protected span** — a stretch of text that normalisation must leave byte-for-byte unchanged (bracket tags, URLs, paths, hashes, code-shaped identifiers such as `x86_64`).
+- **Line reference** — a capital `L` with a line number or range (`L27`, `L27–33`) in text sent for synthesis, spoken as "line"/"lines" in the request's language.
+- **Glued number** — a run of digits touching letters inside a letters-and-digits token (`HTML5`, `L5`), spoken by splitting it from the letters.
 - **Reading session** — one run of reading in one tab, from start to stop, over a fixed list of sentences. _Avoid:_ "playback" for the whole run.
 - **Sentence** — the unit of synthesis, navigation and highlighting; one `/audio/speech` request each (long ones split into ≤400-char pieces).
 - **Paragraph** — a block element of the reading source; Shift+previous/next jumps between paragraph starts.
