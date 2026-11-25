@@ -37,9 +37,9 @@
 - "underscore, dotted and assignment identifiers stay protected"
 - "glued token keeps surrounding punctuation"
 
-- [ ] **Step 1: Write the failing tests.** Run the test command. Expected: FAIL (new cases)
-- [ ] **Step 2: Minimal implementation.** Run the test command. Expected: PASS (all 265 existing tests plus the new ones). If an existing test pins the old masking of a letters-and-digits token, update it to the new requirement and say so in the commit.
-- [ ] **Step 3: Commit.** `git add normalize.py tests/test_normalize.py && git commit -m "feat(normalize): speak numbers glued to letters"`
+- [x] **Step 1: Write the failing tests.** Run the test command. Expected: FAIL (new cases)
+- [x] **Step 2: Minimal implementation.** Run the test command. Expected: PASS (all 265 existing tests plus the new ones). If an existing test pins the old masking of a letters-and-digits token, update it to the new requirement and say so in the commit.
+- [x] **Step 3: Commit.** `git add normalize.py tests/test_normalize.py && git commit -m "feat(normalize): speak numbers glued to letters"`
 
 ### Task 2: Line references are spoken as lines
 

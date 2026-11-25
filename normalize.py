@@ -55,6 +55,12 @@ _BARE_FILE = re.compile(r"[\w-]+(?:\.[\w-]+)*\.[A-Za-z][A-Za-z0-9]{0,5}")
 _LETTER = r"(?:[^\W\d]|_)"
 _DIGIT_TOUCHES_LETTER = re.compile(rf"{_LETTER}\d|\d{_LETTER}")
 _ASSIGNMENT = re.compile(r"^[^\W\d]\w*=\S+$")
+# A glued number: a token of only letters and digits (`HTML5`, `L5`, `4K`), split at every
+# letter/digit boundary so the number passes can spell the digits.
+_LETTERS_AND_DIGITS = re.compile(r"^[^\W_]+$")
+_LETTER_DIGIT_BOUNDARY = re.compile(r"(?<=[^\W\d_])(?=\d)|(?<=\d)(?=[^\W\d_])")
+# A hex run of seven or more characters with a digit and a hex letter (`7d1a98c`) is a hash.
+_HEX_RUN = re.compile(r"^[0-9a-fA-F]{7,}$")
 
 
 def _placeholder(index: int) -> str:
@@ -86,6 +92,25 @@ def _is_identifier(core: str) -> bool:
     return bool(_DIGIT_TOUCHES_LETTER.search(core) or _ASSIGNMENT.match(core))
 
 
+def _is_hex_run(core: str) -> bool:
+    return bool(
+        _HEX_RUN.match(core) and re.search(r"[0-9]", core) and re.search(r"[a-fA-F]", core)
+    )
+
+
+def _is_glued_number(core: str) -> bool:
+    return bool(
+        _LETTERS_AND_DIGITS.match(core)
+        and _DIGIT_TOUCHES_LETTER.search(core)
+        and not _is_hex_run(core)
+    )
+
+
+def _split_glued(core: str) -> str:
+    """`HTML5` → `HTML 5`, `4K` → `4 K`; the digits are left for the number passes."""
+    return _LETTER_DIGIT_BOUNDARY.sub(" ", core)
+
+
 def _mask(text: str) -> tuple[str, list[str]]:
     """Replace protected spans with placeholders; return the masked text and the originals."""
     spans: list[str] = []
@@ -103,7 +128,11 @@ def _mask(text: str) -> tuple[str, list[str]]:
         lead = tok[: len(tok) - len(core)]
         stripped = core.rstrip(_TRAILING_PUNCT)
         trail = core[len(stripped) :]
-        if stripped and (_is_path(stripped) or _is_identifier(stripped)):
+        if stripped and _is_path(stripped):
+            return lead + keep(stripped) + trail
+        if stripped and _is_glued_number(stripped):
+            return lead + _split_glued(stripped) + trail
+        if stripped and _is_identifier(stripped):
             return lead + keep(stripped) + trail
         return tok
 
