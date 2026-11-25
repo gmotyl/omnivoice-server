@@ -14,7 +14,7 @@ PROTECTED = [
     "OMNIVOICE_STEPS=16",
     "v1.2.3",
     "x86_64",
-    "mp3",
+    "7d1a98c",
     "./report.2026.txt",
     "notes.2026.md",
     "~/notes2026.md",
@@ -55,7 +55,7 @@ def test_locale_reduced_to_base_code(monkeypatch):
 def test_protected_spans_untouched(monkeypatch, language):
     sentence = (
         "Start [laughter] then [B EY1 S], see https://a.b/c1, open src/a1/b.py; "
-        "set OMNIVOICE_STEPS=16 on v1.2.3 (x86_64) and play mp3. "
+        "set OMNIVOICE_STEPS=16 on v1.2.3 (x86_64) and play 7d1a98c. "
         "Keep ./report.2026.txt, notes.2026.md, ~/notes2026.md, ../a1.txt and /var/log/2026."
     )
     # With the real passes, whatever they are by now.
@@ -74,7 +74,7 @@ def test_protected_spans_untouched(monkeypatch, language):
     "text", ["5.11.2026", "05.11.2026.", "1.2", "1,2", "e.g.", "U.S.", "2026.Tak", "(1.5)"]
 )
 def test_prose_numbers_and_abbreviations_not_masked(text):
-    masked, spans = nm._mask(text)
+    masked, spans = nm._mask(text, "en")
     assert spans == []
     assert masked == text
 
@@ -236,8 +236,8 @@ def test_percentages(language, text, expected):
         ("en", "1.5 s", "one point five seconds"),
         # Units are case-sensitive: `gb` and `S` are not units.
         ("en", "16 gb", "sixteen gb"),
-        # Unspaced units stay masked as identifiers (Task 1 behaviour).
-        ("pl", "16GB", "16GB"),
+        # An unspaced unit is a glued number: split, then read by the units pass.
+        ("pl", "16GB", "szesnaście gigabajty"),
     ],
 )
 def test_units_after_number(language, text, expected):
@@ -634,3 +634,106 @@ def test_capitalised_abbreviations(language, text, expected):
 def test_acronyms_left_unchanged(language, text, expected):
     # OmniVoice reads all-caps acronyms correctly on its own; they reach the model as written.
     assert normalize(text, language) == expected
+
+
+# --- Glued numbers ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("language", "expected"), [("en", "L five"), ("pl", "L pięć")])
+def test_glued_number_keeps_letter_and_spells_digit(language, expected):
+    # glued number keeps the letter and spells the digit (L5 en/pl)
+    assert normalize("L5", language) == expected
+
+
+def test_layer_name_l2_cache_spoken_as_l_two():
+    # layer name L2 cache is spoken as L two
+    assert normalize("L2 cache", "en") == "L two cache"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("HTML5", "HTML five"),
+        ("mp3", "mp three"),
+        ("4K", "four K"),
+        # Short hex-alphabet tokens are below the hash length of 7, so they are split.
+        ("B2B", "B two B"),
+        ("3D", "three D"),
+    ],
+)
+def test_product_and_format_names_are_split(text, expected):
+    # product and format names are split (HTML5, mp3, 4K)
+    assert normalize(text, "en") == expected
+
+
+@pytest.mark.parametrize("language", ["en", "pl"])
+@pytest.mark.parametrize("text", ["7d1a98c", "deadbeef1"])
+def test_hex_run_is_not_a_glued_number(language, text):
+    # hex run is not a glued number
+    assert normalize(f"commit {text} here", language) == f"commit {text} here"
+
+
+@pytest.mark.parametrize("language", ["en", "pl"])
+@pytest.mark.parametrize(
+    "text", ["OMNIVOICE_STEPS=16", "x86_64", "v1.2.3", "report.2026.txt", "src/app.config.ts"]
+)
+def test_underscore_dotted_and_assignment_identifiers_stay_protected(language, text):
+    # underscore, dotted and assignment identifiers stay protected
+    assert normalize(f"see {text} now", language) == f"see {text} now"
+
+
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [("en", "use (HTML five), then"), ("pl", "użyj (HTML pięć), potem")],
+)
+def test_glued_token_keeps_surrounding_punctuation(language, expected):
+    # glued token keeps surrounding punctuation
+    text = {"en": "use (HTML5), then", "pl": "użyj (HTML5), potem"}[language]
+    assert normalize(text, language) == expected
+
+
+# --- Line references -------------------------------------------------------------------------
+
+
+def test_line_range_after_path_is_spoken_as_lines_en():
+    # line range after a path is spoken as lines (en)
+    assert (
+        normalize("src/app.config.ts · L27–33", "en")
+        == "src/app.config.ts · lines twenty-seven to thirty-three"
+    )
+
+
+def test_line_range_in_polish_uses_linie_and_do():
+    # line range in Polish uses linie and do
+    assert normalize("L27–33", "pl") == "linie dwadzieścia siedem do trzydzieści trzy"
+
+
+@pytest.mark.parametrize("text", ["L27-33", "L27–L33", "L27-L33"])
+def test_hyphen_and_second_l_ranges_are_line_references(text):
+    # hyphen and second-L ranges are line references
+    assert normalize(text, "en") == "lines twenty-seven to thirty-three"
+
+
+@pytest.mark.parametrize(
+    ("text", "language", "expected"),
+    [
+        ("see L120.", "en", "see line one hundred and twenty."),
+        ("L27", "pl", "linia dwadzieścia siedem"),
+        ("L27", "en", "line twenty-seven"),
+        ("(L27–33.)", "en", "(lines twenty-seven to thirty-three.)"),
+    ],
+)
+def test_single_line_with_two_or_more_digits(text, language, expected):
+    # single line with two or more digits (en, pl)
+    assert normalize(text, language) == expected
+
+
+def test_lowercase_l_is_not_a_line_reference():
+    # lowercase l is not a line reference: it is spoken as a glued number
+    assert normalize("l27", "en") == "l twenty-seven"
+
+
+@pytest.mark.parametrize("text", ["HTML５", "L２７", "L٢٧", "HTML٥"])
+def test_non_ascii_digits_are_not_glued_numbers_or_line_references(text):
+    # only ASCII digits trigger the new rules: a token with other digits is left byte for byte
+    assert normalize(text, "en") == text
