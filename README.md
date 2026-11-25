@@ -92,6 +92,12 @@ article and click the toolbar icon (or press `Alt+Shift+R`).
 **WSL:** if the server runs in WSL and the browser on Windows, the default
 `http://localhost:8892/v1` still works: WSL forwards `localhost` to Windows.
 
+**Another device (phone, second computer):** `localhost` is not this machine there. Set up the
+`tailscale serve` mappings in [Using it from other devices](#using-it-from-other-devices-optional-tailscale)
+and enter `https://<host>.<tailnet>.ts.net:8444/v1` as Lektor's server address. Only port 8444
+(the adapter) works for Lektor: 8443 is the anytts relay (404), and any other HTTPS port belongs
+to whatever else the host serves.
+
 ## Licences
 
 - **Code:** MIT, see [LICENSE](LICENSE).
