@@ -2,9 +2,11 @@
 
 `normalize(text, language)` masks protected spans (OmniVoice bracket tags, URLs, file paths as
 `_is_path` recognises them: rooted, two or more slashes, or a file extension; hex runs of 7 or
-more; identifiers with a digit next to a letter or `_`, and `KEY=value` assignments), runs the
-ordered list of named passes in `PASSES`, and restores the masked spans byte for byte. Tokens made
-only of letters and ASCII digits are not masked: line references (`L27–33`) become "lines 27 to
+more; `KEY=value` assignments; tokens with a non-ASCII digit next to a letter; and identifiers
+where a digit touches a letter or `_` and the token also contains `_`, `.` or another
+non-alphanumeric character, such as `x86_64` or `v1.2.3`), runs the ordered list of named passes
+in `PASSES`, and restores the masked spans byte for byte. Tokens made only of letters and ASCII
+digits are not masked: line references (`L27–33`) become "lines 27 to
 33" and other glued numbers are split (`HTML5` → `HTML 5`) so the passes speak the digits. It never
 raises: a pass that throws is skipped and logged.
 

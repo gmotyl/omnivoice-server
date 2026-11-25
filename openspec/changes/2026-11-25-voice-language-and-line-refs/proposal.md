@@ -14,15 +14,17 @@ the `-en` twins were cloned from bilingual PL+EN clips, so `bill-en` reads the l
 
 ## What changes
 
-- A **line reference** (`L27–33`, `L27-33`, `L27–L33`, or `L27` with two or more digits) is said as
+- A **line reference** (ASCII `0-9` digits only: `L27–33`, `L27-33`, `L27–L33`, or `L27` with two or more digits) is said as
   "lines twenty-seven to thirty-three" / "line twenty-seven" (Polish: "linie … do …" / "linia …").
-- Any other **glued number** in a token of only letters and digits (`L5`, `HTML5`, `mp3`, `4K`,
-  `60s`) is split from its letters, and the later passes say it in the request's language: "L five",
-  "HTML five", "four K".
-- Code-shaped tokens stay protected as before: identifiers with a digit next to a letter or `_`
-  (`x86_64`, `v1.2.3`), `KEY=value` assignments, a hex run of seven or more characters, URLs,
-  bracket tags, and paths as `_is_path` recognises them (rooted, two or more slashes, or a file
-  extension). A token with a single slash and no extension (`src/123`) was never masked and still
+- Any other **glued number** in a token of only letters and ASCII `0-9` digits (`L5`, `HTML5`,
+  `mp3`, `4K`, `60s`) is split from its letters, and the later passes say it in the request's
+  language: "L five", "HTML five", "four K". A token with other scripts' digits (`HTML５`, `L２７`) is
+  neither a glued number nor a line reference and is left unchanged.
+- Code-shaped tokens stay protected as before: identifiers where a digit touches a letter or `_`
+  and the token also contains `_`, `.` or another non-alphanumeric character (`x86_64`,
+  `v1.2.3`), tokens with a non-ASCII digit next to a letter, `KEY=value` assignments, a hex run of
+  seven or more characters, URLs, bracket tags, and paths as `_is_path` recognises them (rooted,
+  two or more slashes, or a file extension). A token with a single slash and no extension (`src/123`) was never masked and still
   is not.
 
 The coordinated pavilio change with the same id makes the panel's language follow the selected voice.

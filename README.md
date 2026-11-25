@@ -153,15 +153,18 @@ so the model says them and its duration estimate matches what is said. All-caps 
 - **Scope:** `pl` and `en` only; any other language passes through unchanged. A locale such as
   `pl-PL` is reduced to `pl`.
 - **Language:** the request's `language`, else the voice's.
-- **Line references:** a capital `L` with a line number or range is spoken as lines: `L27–33` →
-  "lines twenty-seven to thirty-three" (pl "linie … do …"), `L120` → "line one hundred and
-  twenty". A single `L<n>` needs at least two digits; a lowercase `l` never counts.
-- **Glued numbers:** a token of letters and digits is split at each letter/digit boundary and the
-  digits are spoken: `L5` → "L five", `HTML5` → "HTML five".
-- **Untouched:** bracket tags (`[laughter]`), URLs, paths (rooted, two or more slashes, or a file
-  extension: `./run.sh`, `src/app/main`, `src/app.ts`), hex runs of 7 or more (`7d1a98c`) and
-  identifiers with a digit next to a letter or `_`, or a `KEY=value` (`x86_64`,
-  `OMNIVOICE_STEPS=16`, `v1.2.3`).
+- **Line references:** a capital `L` with an ASCII `0-9` line number or range is spoken as
+  lines: `L27–33` → "lines twenty-seven to thirty-three" (pl "linie … do …"), `L120` → "line one
+  hundred and twenty". A single `L<n>` needs at least two digits; a lowercase `l` never counts.
+- **Glued numbers:** a token of only letters and ASCII `0-9` digits is split at each letter/digit
+  boundary and the digits are spoken: `L5` → "L five", `HTML5` → "HTML five". Other scripts'
+  digits (`HTML５`, `L２７`) do not count: such a token is left as written.
+- **Untouched:** bracket tags (`[laughter]`), URLs, paths as `_is_path` recognises them (rooted,
+  two or more slashes, or a file extension: `./run.sh`, `src/app/main`, `src/app.ts`), hex runs of
+  7 or more (`7d1a98c`), a `KEY=value` (`OMNIVOICE_STEPS=16`), tokens with a non-ASCII digit next
+  to a letter (`HTML５`), and identifiers where a digit touches a letter or `_` and the token also
+  holds `_`, `.` or another character that is not a letter or digit (`x86_64`, `v1.2.3`). A token
+  of only letters and ASCII digits (`HTML5`) is not protected: it is split as above.
 - **Switch:** on by default; `OMNIVOICE_NORMALIZE=0|false|off` turns it off. It is read at startup,
   so restart the server to change it.
 
