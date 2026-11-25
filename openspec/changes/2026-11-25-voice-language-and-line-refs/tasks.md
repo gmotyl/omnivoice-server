@@ -47,7 +47,7 @@
 - Modify: `normalize.py` (new `_LINE_REF` and `_line_reference`, checked before the glued-number rule in `token`)
 - Test: `tests/test_normalize.py`
 
-**Contract:** `_LINE_REF = re.compile(r"^L(\d+)(?:[–-]L?(\d+))?$")`. A match with a range, or with ≥ 2 digits, rewrites to `{line|lines} {N}[ {to} {M}]` with words `{"en": ("line", "lines", "to"), "pl": ("linia", "linie", "do")}`. Digits are left for `_integers`. A single digit with no range is not a line reference.
+**Contract:** `_LINE_REF = re.compile(r"^L([0-9]+)(?:[–-]L?([0-9]+))?$")` (ASCII digits only, like `_integers`). A match with a range, or with ≥ 2 digits, rewrites to `{line|lines} {N}[ {to} {M}]` with words `{"en": ("line", "lines", "to"), "pl": ("linia", "linie", "do")}`. Digits are left for `_integers`. A single digit with no range is not a line reference.
 
 **Acceptance criteria:**
 - WHEN `src/app.config.ts · L27–33` (en) THEN `src/app.config.ts · lines twenty-seven to thirty-three`

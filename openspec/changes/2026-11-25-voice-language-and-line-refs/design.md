@@ -32,7 +32,7 @@ request's language (`_integers`, `_units`). That keeps a single set of number ru
 
 ### Line reference
 
-`^L(\d+)(?:[–-]L?(\d+))?$` on the token core (leading and trailing punctuation already stripped):
+`^L([0-9]+)(?:[–-]L?([0-9]+))?$` (ASCII digits only, like `_integers`) on the token core (leading and trailing punctuation already stripped):
 
 | Token | en | pl |
 |---|---|---|
@@ -47,10 +47,12 @@ says its digit.
 
 ### Glued number
 
-A token core made only of letters and digits (`^[^\W_]+$`) with a digit touching a letter, and **not**
+A token core made only of letters and ASCII digits (`^(?:[^\W\d_]|[0-9])+$`) with a digit touching a
+letter, and **not**
 a hex run (`^[0-9a-fA-F]{7,}$` with both a digit and a hex letter): spaces are inserted at every
 letter/digit boundary. `HTML5` → `HTML 5`, `mp3` → `mp 3`, `4K` → `4 K`, `B2B` → `B 2 B`,
-`60s` → `60 s`.
+`60s` → `60 s`. Only ASCII `[0-9]` counts, as in `_integers`: a token with other scripts' digits
+(`HTML５`, `L２７`) is neither a glued number nor a line reference and stays masked as before.
 
 Still protected (unchanged behaviour): `x86_64`, `OMNIVOICE_STEPS=16`, `v1.2.3`, `7d1a98c`,
 `report.2026.txt`, paths, URLs, `[laughter]`.

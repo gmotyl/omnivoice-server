@@ -1,11 +1,12 @@
 """Text normalisation for Polish and English: written-only tokens become spoken words.
 
-`normalize(text, language)` masks protected spans (OmniVoice bracket tags, URLs, file paths, hex
-runs of 7 or more, identifiers with `_`, `.`, `=` or `/`), runs the ordered list of named passes
-in `PASSES`, and restores the masked spans byte for byte. Tokens made only of letters and digits
-are not masked: line references (`L27–33`) become "lines 27 to 33" and other glued numbers are
-split (`HTML5` → `HTML 5`) so the passes speak the digits. It never raises: a pass that throws is
-skipped and logged.
+`normalize(text, language)` masks protected spans (OmniVoice bracket tags, URLs, file paths as
+`_is_path` recognises them: rooted, two or more slashes, or a file extension; hex runs of 7 or
+more; identifiers with a digit next to a letter or `_`, and `KEY=value` assignments), runs the
+ordered list of named passes in `PASSES`, and restores the masked spans byte for byte. Tokens made
+only of letters and ASCII digits are not masked: line references (`L27–33`) become "lines 27 to
+33" and other glued numbers are split (`HTML5` → `HTML 5`) so the passes speak the digits. It never
+raises: a pass that throws is skipped and logged.
 
 See openspec/changes/text-normalisation/design.md § Rewrite order for the pass order.
 """
@@ -58,14 +59,15 @@ _BARE_FILE = re.compile(r"[\w-]+(?:\.[\w-]+)*\.[A-Za-z][A-Za-z0-9]{0,5}")
 _LETTER = r"(?:[^\W\d]|_)"
 _DIGIT_TOUCHES_LETTER = re.compile(rf"{_LETTER}\d|\d{_LETTER}")
 _ASSIGNMENT = re.compile(r"^[^\W\d]\w*=\S+$")
-# A glued number: a token of only letters and digits (`HTML5`, `L5`, `4K`), split at every
-# letter/digit boundary so the number passes can spell the digits.
-_LETTERS_AND_DIGITS = re.compile(r"^[^\W_]+$")
-_LETTER_DIGIT_BOUNDARY = re.compile(r"(?<=[^\W\d_])(?=\d)|(?<=\d)(?=[^\W\d_])")
+# A glued number: a token of only letters and ASCII digits (`HTML5`, `L5`, `4K`), split at every
+# letter/digit boundary so the number passes can spell the digits. ASCII `[0-9]` only, like
+# `_integers`: a token with other scripts' digits (`HTML５`) stays an identifier and is masked.
+_LETTERS_AND_DIGITS = re.compile(r"^(?:[^\W\d_]|[0-9])+$")
+_LETTER_DIGIT_BOUNDARY = re.compile(r"(?<=[^\W\d_])(?=[0-9])|(?<=[0-9])(?=[^\W\d_])")
 # A hex run of seven or more characters with a digit and a hex letter (`7d1a98c`) is a hash.
 _HEX_RUN = re.compile(r"^[0-9a-fA-F]{7,}$")
 # A line reference: a capital `L` with a line number or a range (`L27`, `L27–33`, `L27-L33`).
-_LINE_REF = re.compile(r"^L(\d+)(?:[–-]L?(\d+))?$")
+_LINE_REF = re.compile(r"^L([0-9]+)(?:[–-]L?([0-9]+))?$")
 # lang -> (one line, several lines, range word).
 _LINE_WORDS = {"en": ("line", "lines", "to"), "pl": ("linia", "linie", "do")}
 

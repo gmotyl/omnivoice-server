@@ -731,3 +731,9 @@ def test_single_line_with_two_or_more_digits(text, language, expected):
 def test_lowercase_l_is_not_a_line_reference():
     # lowercase l is not a line reference: it is spoken as a glued number
     assert normalize("l27", "en") == "l twenty-seven"
+
+
+@pytest.mark.parametrize("text", ["HTML５", "L２７", "L٢٧", "HTML٥"])
+def test_non_ascii_digits_are_not_glued_numbers_or_line_references(text):
+    # only ASCII digits trigger the new rules: a token with other digits is left byte for byte
+    assert normalize(text, "en") == text

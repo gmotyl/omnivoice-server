@@ -158,8 +158,10 @@ so the model says them and its duration estimate matches what is said. All-caps 
   twenty". A single `L<n>` needs at least two digits; a lowercase `l` never counts.
 - **Glued numbers:** a token of letters and digits is split at each letter/digit boundary and the
   digits are spoken: `L5` → "L five", `HTML5` → "HTML five".
-- **Untouched:** bracket tags (`[laughter]`), URLs, paths, hex runs of 7 or more (`7d1a98c`) and
-  identifiers with `_`, `.`, `=` or `/` (`x86_64`, `OMNIVOICE_STEPS=16`, `v1.2.3`).
+- **Untouched:** bracket tags (`[laughter]`), URLs, paths (rooted, two or more slashes, or a file
+  extension: `./run.sh`, `src/app/main`, `src/app.ts`), hex runs of 7 or more (`7d1a98c`) and
+  identifiers with a digit next to a letter or `_`, or a `KEY=value` (`x86_64`,
+  `OMNIVOICE_STEPS=16`, `v1.2.3`).
 - **Switch:** on by default; `OMNIVOICE_NORMALIZE=0|false|off` turns it off. It is read at startup,
   so restart the server to change it.
 

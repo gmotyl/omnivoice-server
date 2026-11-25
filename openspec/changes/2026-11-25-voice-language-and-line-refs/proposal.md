@@ -19,8 +19,11 @@ the `-en` twins were cloned from bilingual PL+EN clips, so `bill-en` reads the l
 - Any other **glued number** in a token of only letters and digits (`L5`, `HTML5`, `mp3`, `4K`,
   `60s`) is split from its letters, and the later passes say it in the request's language: "L five",
   "HTML five", "four K".
-- Code-shaped tokens stay protected: anything with `_`, `.`, `=`, `/`, a hex run of seven or more
-  characters, URLs, paths and bracket tags.
+- Code-shaped tokens stay protected as before: identifiers with a digit next to a letter or `_`
+  (`x86_64`, `v1.2.3`), `KEY=value` assignments, a hex run of seven or more characters, URLs,
+  bracket tags, and paths as `_is_path` recognises them (rooted, two or more slashes, or a file
+  extension). A token with a single slash and no extension (`src/123`) was never masked and still
+  is not.
 
 The coordinated pavilio change with the same id makes the panel's language follow the selected voice.
 Here, the language is the request's (for the `-en`/`-pl` twins, the locked voice language).
